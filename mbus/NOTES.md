@@ -13,9 +13,9 @@ Tis class represents a message object. It doesn't really do anything except be s
 ### MessageBusClient
 This class is a client on the message bus. It connects to the message bus server over a Unix socket and can receive and transmit messages on the bus. It uses asyncio to do its job, and so needs to be associated with a loop. Messages are not queued in this object.
 
-def __init__(self, loop, bus_addr):
-    Connect to `bus_addr` and begin running on asyncio loop `loop`.
-
+@classmethod
+async def create(self, bus_addr):
+    Instantiate a MessageBusClient that connects to `bus_addr`.
 
 def send(self, tag, message):
     Send `message` to the bus with the given `tag`.
