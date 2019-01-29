@@ -13,7 +13,18 @@ class MessageBusServer:
 
     async def client_connected(self, reader, writer):
         print("hi!", type(reader), type(writer))
-        writer.close()
+        try:
+            while True:
+                print("send")
+                writer.write(b"3")
+                try:
+                    await writer.drain()
+                except ConnectionResetError:
+                    print("oh no!")
+                    break
+                await asyncio.sleep(1)
+        finally:
+            writer.close()
 
 
 if __name__ == "__main__":

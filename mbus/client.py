@@ -15,6 +15,9 @@ class MessageBusClient:
         # connect to the specified bus
         reader, writer = await asyncio.open_unix_connection(bus_addr)
 
+        while True:
+            print(await reader.read(8192), reader.at_eof())
+
         print(type(reader), type(writer))
 
 async def main():
