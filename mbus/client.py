@@ -14,17 +14,22 @@ class MessageBusClient:
 
         # connect to the specified bus
         reader, writer = await asyncio.open_unix_connection(bus_addr)
+        self.writer = writer
 
-        while True:
-            print(await reader.read(8192), reader.at_eof())
+        writer.close()
 
-        print(type(reader), type(writer))
+client = None
 
 async def main():
+    global client
     client = await MessageBusClient.create("./socket_mbus_main")
 
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     asyncio.ensure_future(main())
-    loop.run_forever()
+    try:
+        loop.run_forever()
+    finally:
+        client.writer.close()
+
