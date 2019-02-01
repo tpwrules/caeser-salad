@@ -4,15 +4,7 @@ import asyncio
 import os
 import traceback
 
-from enum import Enum
-
-from connector import ConnectionEndedError, BusConnector
-
-# things to do with the tag in the metadata
-class MessageAction(Enum):
-    SUBSCRIBE = 1
-    UNSUBSCRIBE = 2
-    SEND = 3
+from connector import ConnectionEndedError, BusConnector, MessageAction
 
 class MessageBusServer:
     def __init__(self, bus_addr):
@@ -103,7 +95,7 @@ class MessageBusServer:
         # we don't care what's in the data bytes
         action, tag = meta
 
-        if mtype == MessageAction.SEND:
+        if action == MessageAction.SEND:
             # figure out who is interested in this message
             c_set = self.connectors_for_tag.get(tag)
             if c_set is None:
@@ -112,14 +104,16 @@ class MessageBusServer:
             # and send the message to all of em
             # copy the set so if we need to forget a connection we can do it
             # without changing the set we're iterating over
-            for connector in c_set.copy():
+            for dest_connector in c_set.copy():
+                # don't loop back
+                if dest_connector is connector: continue
                 # the metadata is just the tag name
                 try:
-                    connector.send(tag, data)
+                    dest_connector.send(tag, data)
                 except ConnectionEndedError:
                     # oops, the connector is closed
                     self.forget_connector(connector)
-        elif mtype == MessageAction.SUBSCRIBE:
+        elif action == MessageAction.SUBSCRIBE:
             # add this connector to the set of connectors for this tag
             # so that it will receive future messages
             c_set = self.connectors_for_tag.get(tag)
@@ -128,7 +122,7 @@ class MessageBusServer:
                 c_set = set()
                 self.connectors_for_tag[tag] = c_set
             c_set.add(connector)
-        elif mtype == MessageAction.UNSUBSCRIBE:
+        elif action == MessageAction.UNSUBSCRIBE:
             try:
                 self.connectors_for_tag[tag].remove(connector)
             except KeyError:

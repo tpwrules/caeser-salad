@@ -5,9 +5,17 @@ import asyncio
 import struct
 import pickle
 
+from enum import Enum
+
 # raised when send or recv is called but the connection has closed
 class ConnectionEndedError(Exception):
     pass
+
+# things to do with the tag in the metadata
+class MessageAction(Enum):
+    SUBSCRIBE = 1
+    UNSUBSCRIBE = 2
+    SEND = 3
 
 class BusConnector:
     def __init__(self, reader, writer):
@@ -33,6 +41,9 @@ class BusConnector:
 
     async def _read_exactly(self, n):
         # read exactly n bytes of data from the reader
+
+        if n == 0:
+            return b''
 
         while self._rx_bytes < n:
             data = await self._reader.read(65536)
@@ -81,6 +92,8 @@ class BusConnector:
             # close out the connection right now
             await self.close()
             raise ConnectionEndedError() from e
+
+        return meta, data
 
     # Transmit oriented functions
 
