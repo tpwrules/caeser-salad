@@ -50,3 +50,23 @@ This class receives filtered messages from the bus and then queues them, then le
 
 async def wait(self):
     Wait for a message to be received by this filter, then return it. Raises asyncio.QueueEmpty if the filter has been unregistered and the queue becomes empty.
+
+# Other APIs
+
+### BusConnector
+This class handles reading and writing from the bus using a reader and writer.
+
+def __init__(self, reader, writer):
+    Create a connector with the given asyncio.StreamReader and asyncio.StreamWriter instances as returned by eg. asyncio.open_unix_connection.
+
+def send(self, meta, data):
+    Send a message to the other side of the connector. `meta` is an arbitrary Python object that gets pickled and unpickled on the other side. `data` is a bytes that gets transmitted unchanged. Raises ConnectionEndedError if the connection is closed.
+
+async def recv(self):
+    Receive a message from the other side of the connector. Returns `meta` and `data` as sent by send above. Raises ConnectionEndedError if the connection is closed. This function is not reentrant!
+
+async def close(self):
+    Immediately close the connector. Messages queued for transmission are discarded.
+
+async def flush(self):
+    Flush sent messages, if possible. If the connection ends or has ended, no exception is raised.
