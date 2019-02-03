@@ -103,16 +103,20 @@ class MessageBusClient:
 
 
 async def main():
-    client = await MessageBusClient.create("./socket_mbus_main")
-    client.subscribe("test")
-    import random
-    x = random.randrange(0, 9999)
-    print("sending", x)
-    client.send("test", x)
+    try:
+        client = await MessageBusClient.create("./socket_mbus_main")
+        client.subscribe("test")
+        import random
+        while True:
+            x = random.randrange(0, 9999)
+            print("sending", x)
+            client.send("test", x)
+            await asyncio.sleep(5)
+    finally:
+        print("closing out client")
+        await client.close()
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    asyncio.ensure_future(main())
-    loop.run_forever()
+    asyncio.run(main())
 

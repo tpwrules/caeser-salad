@@ -4,6 +4,8 @@
 import asyncio
 import struct
 import pickle
+import traceback
+import sys
 
 from enum import Enum
 
@@ -17,15 +19,36 @@ class MessageAction(Enum):
     UNSUBSCRIBE = 2
     SEND = 3
 
+# how we close down
+# closing can start from various sources
+# 1a. close() is called
+# 1b. receive task raises an exception
+# 1c. transmit task raises an exception
+# then we begin the process
+# 2. _start_close() is called
+# 3. if not already created, start_close creates a task which runs
+#    _do_close(). this locks out all other functions. if it is already created,
+#    _start_close() returns without doing anything
+# 4. _do_close() begins running and cancels the tx and rx tasks and waits for
+#    them to be cancelled
+# 5. _do_close() closes the writer and waits for it to be closed
+# 6. _do_close() calls recv_cb(self, None, None) to tell the callback we're done
+# 7. _do_close() cleans up memory we don't need anymore
+# 8. _do_close() task finished
+# 9. close() awaits on the close task, and closing is finished
+
 class BusConnector:
     def __init__(self, reader, writer, recv_cb):
         self._reader = reader
         self._writer = writer
         self._recv_cb = recv_cb
 
-        self._closed = False
+        # this task is created to close down everything
+        # if it is not None, then functions raise ConnectionClosedError()
+        # or otherwise act as if the connection is closed
+        self._close_task = None
 
-        # we have a list of chunks to hold received bytes
+        # we have a list of chunks of received bytes
         # this approach lets us avoid joining everything until we know we
         # have enough
         self._rx_chunks = []
@@ -36,11 +59,10 @@ class BusConnector:
 
         # transmission is run in a separate task so the user doesn't have
         # to await for a transmission to complete
-        self._tx_task = asyncio.ensure_future(self._tx_messages())
+        self._tx_task = asyncio.create_task(self._tx_messages())
 
-        # we also need a task to handle received messages and call the user's
-        # callback
-        self._rx_task = asyncio.ensure_future(self._rx_messages())
+        # reception reads bytes from the reader and calls the callback
+        self._rx_task = asyncio.create_task(self._rx_messages())
 
     # Receive oriented functions
 
@@ -56,7 +78,7 @@ class BusConnector:
             if len(data) == 0: # reader was disconnected
                 # we will never have enough bytes cause this loop will add 0
                 # so just die now
-                raise ConnectionResetError()
+                raise ConnectionResetError("reader at EOF")
 
             self._rx_chunks.append(data)
             self._rx_bytes += len(data)
@@ -70,45 +92,30 @@ class BusConnector:
 
         return out
 
-    async def _rx_message(self):
-        # receive exactly one message and let the exceptions raise as they may
-
-        # get 8 bytes of length: one for meta, one for data
-        lens = await self._read_exactly(8)
-        metalen, datalen = struct.unpack("<II", lens)
-
-        # read and unpickle the metadata
-        metabytes = await self._read_exactly(metalen)
-        meta = pickle.loads(metabytes)
-
-        # and just read the data bytes
-        data = await self._read_exactly(datalen)
-
-        return meta, data
-
     async def _rx_messages(self):
         # loop to receive messages and call the callback
         try:
             while True:
-                # receive one message
-                meta, data = await self._rx_message()
-                # and then call the callback
+                # get 8 bytes of length: one uint32_t for meta, one for data
+                lens = await self._read_exactly(8)
+                metalen, datalen = struct.unpack("<II", lens)
+
+                # read and unpickle the metadata
+                metabytes = await self._read_exactly(metalen)
+                meta = pickle.loads(metabytes)
+
+                # and just read the data bytes
+                data = await self._read_exactly(datalen)
+
+                # tell the callback about this new message
                 try:
                     self._recv_cb(self, meta, data)
                 except:
                     pass
-        except asyncio.CancelledError:
-            # let ourselves be cancelled naturally
-            # (we will only end up here if _closed is already True)
-            raise
-        except:
-            # otherwise, close out the connection
-            # we can't just await on close, because it awaits on us, and there
-            # would be a deadlock
-            # so note that we ended so the functions stop working
-            self._closed = True
-            # then schedule a task to call close for us
-            asyncio.ensure_future(self.close())
+        finally:
+            # no matter how this loop ends, it ending means the connection
+            # should be closed
+            self._start_close()
 
     # Transmit oriented functions
 
@@ -128,34 +135,23 @@ class BusConnector:
                 await self._writer.drain()
                 # message has made it into the pipe at least
                 self._tx_queue.task_done()
-        except asyncio.CancelledError:
-            # let ourselves be cancelled naturally
-            # (we will only end up here if _closed is already True)
-            raise
-        except:
-            # otherwise, close out the connection
-            # we can't just await on close, because it awaits on us, and there
-            # would be a deadlock
-            # so note that we ended so the functions stop working
-            self._closed = True
-            # then schedule a task to call close for us
-            asyncio.ensure_future(self.close())
         finally:
-            # regardless, pretend we finished all the messages in the queue
-            # so that flush() doesn't deadlock
+            # no matter how this loop ends, it ending means the connection
+            # should be closed
+            self._start_close()
+
+            # pretend we finished all the messages in the queue
+            # so that flush() doesn't wait forever
             try:
                 while True:
                     self._tx_queue.task_done()
-            except ValueError: # no more tasks to end
+            except ValueError: # no more tasks to be done
                 pass
-
-            # finally, close the writer socket so the other end sees us die
-            self._writer.close()
 
     def send(self, meta, data):
         # send a message to the other side of the connector
-        if self._closed:
-            raise ConnectionClosedError()
+        if self._close_task is not None:
+            raise ConnectionClosedError("can't send: connector is closed")
 
         # pickle up the metadata so if something goes wrong, it happens now
         metabytes = pickle.dumps(meta)
@@ -164,34 +160,66 @@ class BusConnector:
         self._tx_queue.put_nowait((metabytes, data))
 
     async def flush(self):
-        # wait for the tx queue to complete its messages
-        # if the connection has ended, all messages will be completed
-        # and no new messages will start, so we don't have to test that here
+        if self._close_task is not None:
+            return
+        # wait for all messages in the queue to be sent
         await self._tx_queue.join()
 
+    def _start_close(self):
+        if self._close_task is None:
+            # schedule a task to do the actual closing
+            self._close_task = asyncio.create_task(self._do_close())
 
-    async def close(self):
-        # we have officially ended
-        self._closed = True
-
-        # try to cancel the tasks
+    async def _do_close(self):
+        # cancel the rx and tx tasks
         if not self._tx_task.done():
             self._tx_task.cancel()
         if not self._rx_task.done():
             self._rx_task.cancel()
 
-        # wait for them to cancel and/or eat any exception they produced
+        # wait for them to cancel and/or print any exception they produced
         try:
             await self._tx_task
-        except:
+        except (asyncio.CancelledError, ConnectionResetError):
             pass
+        except:
+            print("TX TASK EXCEPTION ON", self, file=sys.stderr)
+            traceback.print_exc()
+
         try:
             await self._rx_task
-        except:
+        except (asyncio.CancelledError, ConnectionResetError):
             pass
+        except:
+            print("RX TASK EXCEPTION ON", self, file=sys.stderr)
+            traceback.print_exc()
 
-        # now call the callback to say we are finally done with everything
+        # close out the writer so the other end sees us stop now
+        self._writer.close()
+        await self._writer.wait_closed()
+
+        # tell the callback we are finished
         try:
             self._recv_cb(self, None, None)
         except:
             pass
+
+        # clean up things we won't need anymore
+        # probably not exactly necessary
+        self._writer = None
+        self._tx_task = None
+        self._tx_queue = None
+
+        self._reader = None
+        self._rx_task = None
+        self._rx_chunks = None
+        self._recv_cb = None
+
+        # and we are finally, totally, closed! no tasks running, no objects
+        # lingering, no exceptions waiting, etc.
+
+    async def close(self):
+        # start the close process (if it's not already started)
+        self._start_close()
+        # and wait for it to finish
+        await self._close_task

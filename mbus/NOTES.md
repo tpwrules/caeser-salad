@@ -62,11 +62,8 @@ def __init__(self, reader, writer, recv_cb):
 def send(self, meta, data):
     Send a message to the other side of the connector. `meta` is an arbitrary Python object that gets pickled and unpickled on the other side. `data` is a bytes that gets transmitted unchanged. Raises ConnectionClosedError if the connection is closed.
 
-async def recv(self):
-    Receive a message from the other side of the connector. Returns `meta` and `data` as sent by send above. Raises ConnectionClosedError if the connection is closed. This function is not reentrant!
-
 async def close(self):
-    Immediately close the connector. Messages queued for transmission are discarded.
+    Close the connector and wait for it to be fully closed. Messages queued for transmission are discarded.
 
 async def flush(self):
     Flush sent messages, if possible. If the connection ends or has ended, no exception is raised.
