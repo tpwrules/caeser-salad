@@ -3,6 +3,7 @@
 import asyncio
 import os
 import traceback
+import sys
 
 from connector import ConnectionClosedError, BusConnector, MessageAction
 
@@ -13,13 +14,13 @@ class MessageBusServer:
         self.connectors = set()
 
     async def serve(self):
-        self.server = await asyncio.start_unix_server(self.subscriber_connected, 
+        self.server = await asyncio.start_unix_server(
+            self.subscriber_connected, 
             path=self.bus_addr)
 
     def subscriber_connected(self, reader, writer):
         # instantiate a connector to manage this subscriber
         connector = BusConnector(reader, writer, self.handle_rx)
-
         self.connectors.add(connector)
 
     async def close(self):
@@ -37,19 +38,14 @@ class MessageBusServer:
         # close all our connectors
         for connector in connectors:
             await connector.close()
-            # closing the connector will cause it to raise
-            # a ConnectionClosedError in recv()
-            # which will stop the rx task
 
     def forget_connector(self, connector):
-        # forget this connector entirely
-
-        # busy shutting down
-        if self.connectors is None:
-            return
-
         # if this is called, the connector has already closed itself
         # so all we need to do is forget that it existed
+
+        # busy shutting down so it's already forgotten
+        if self.connectors is None:
+            return
 
         try:
             self.connectors.remove(connector)
@@ -70,13 +66,14 @@ class MessageBusServer:
         if meta is None and data is None:
             # the connector has closed, so forget it
             self.forget_connector(connector)
-            return
-
-        # otherwise, try to route the message
-        try:
-            self.route(connector, meta, data)
-        except Exception as e:
-            traceback.print_exc()
+        else:
+            # otherwise, try to route the message
+            try:
+                self.route(connector, meta, data)
+            except Exception as e:
+                print("ROUTE FAILURE", file=sys.stderr)
+                print(connector, meta, data, file=sys.stderr)
+                traceback.print_exc()
 
     def route(self, connector, meta, data):
         # the first element of meta is an action to do with the tag
@@ -119,13 +116,17 @@ class MessageBusServer:
                 pass
 
 
-if __name__ == "__main__":
+async def main():
     try:
         server = MessageBusServer("./socket_mbus_main")
-        loop = asyncio.get_event_loop()
-        asyncio.ensure_future(server.serve())
-        loop.run_forever()
+        await server.serve()
+        # server will do everything
+        while True:
+            await asyncio.sleep(1)
     finally:
-        loop.run_until_complete(server.close())
+        await server.close()
         if os.path.exists("./socket_mbus_main"):
-            os.remove("./socket_mbus_main")
+            os.remove("./socket_mbus_main")   
+
+if __name__ == "__main__":
+    asyncio.run(main())
