@@ -4,7 +4,7 @@ import asyncio
 import pickle
 import traceback
 
-from connector import ConnectionEndedError, BusConnector, MessageAction
+from connector import ConnectionClosedError, BusConnector, MessageAction
 
 class MessageBusClient:
     @classmethod
@@ -26,7 +26,7 @@ class MessageBusClient:
         # keep refcount of our subscriptions
         self._subscriptions = {}
 
-        self._ended = False
+        self._closed = False
 
         # spawn task to handle messages received from the connector
         self._rx_task = asyncio.ensure_future(self._rx_msg_task())
@@ -38,17 +38,17 @@ class MessageBusClient:
                 self._process(tag, data)            
         except asyncio.CancelledError:
             # let ourselves be cancelled naturally
-            # (we will only end up here if _ended is already True)
+            # (we will only end up here if _closed is already True)
             raise
         except Exception as e:
             # something went seriously wrong
-            if not isinstance(e, ConnectionEndedError):
+            if not isinstance(e, ConnectionClosedError):
                 traceback.print_exc()
             # force ourselves closed
             # we can't just await on close, because it awaits on us, and there
             # would be a deadlock
-            # so note that we ended so the functions stop working
-            self._ended = True
+            # so note that we closed so the functions stop working
+            self._closed = True
             # then schedule a task to call close for us
             asyncio.ensure_future(self.close())
 
@@ -64,8 +64,8 @@ class MessageBusClient:
         print("got a message", message)
 
     def send(self, tag, message):
-        if self._ended:
-            raise ConnectionEndedError()
+        if self._closed:
+            raise ConnectionClosedError()
 
         if not isinstance(tag, str):
             raise ValueError("tag must be string")
@@ -75,8 +75,8 @@ class MessageBusClient:
         self._connector.send((MessageAction.SEND, tag), mdata)
 
     def subscribe(self, tag):
-        if self._ended:
-            raise ConnectionEndedError()
+        if self._closed:
+            raise ConnectionClosedError()
 
         if not isinstance(tag, str):
             raise ValueError("tag must be string")
@@ -86,7 +86,7 @@ class MessageBusClient:
         self._subscriptions[tag] = subscriptions+1
 
     def unsubscribe(self, tag):
-        if self._ended:
+        if self._closed:
             return
 
         if not isinstance(tag, str):
@@ -102,7 +102,7 @@ class MessageBusClient:
 
     async def close(self):
         # we are done
-        self._ended = True
+        self._closed = True
 
         # close the connector to be sure we don't receive or send anything more
         # but wait for curent messages to be sent

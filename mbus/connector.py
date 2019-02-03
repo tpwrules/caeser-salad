@@ -8,7 +8,7 @@ import pickle
 from enum import Enum
 
 # raised when send or recv is called but the connection has closed
-class ConnectionEndedError(Exception):
+class ConnectionClosedError(Exception):
     pass
 
 # things to do with the tag in the metadata
@@ -22,7 +22,7 @@ class BusConnector:
         self._reader = reader
         self._writer = writer
 
-        self._ended = False
+        self._closed = False
 
         # we have a list of chunks to hold received bytes
         # this approach lets us avoid joining everything until we know we
@@ -82,8 +82,8 @@ class BusConnector:
         return meta, data
 
     async def recv(self):
-        if self._ended:
-            raise ConnectionEndedError()
+        if self._closed:
+            raise ConnectionClosedError()
 
         try:
             meta, data = await self._rx_message()
@@ -91,7 +91,7 @@ class BusConnector:
             # something went wrong
             # close out the connection right now
             await self.close()
-            raise ConnectionEndedError() from e
+            raise ConnectionClosedError() from e
 
         return meta, data
 
@@ -115,14 +115,14 @@ class BusConnector:
                 self._tx_queue.task_done()
         except asyncio.CancelledError:
             # let ourselves be cancelled naturally
-            # (we will only end up here if _ended is already True)
+            # (we will only end up here if _closed is already True)
             raise
         except:
             # otherwise, close out the connection
             # we can't just await on close, because it awaits on us, and there
             # would be a deadlock
             # so note that we ended so the functions stop working
-            self._ended = True
+            self._closed = True
             # then schedule a task to call close for us
             asyncio.ensure_future(self.close())
         finally:
@@ -139,8 +139,8 @@ class BusConnector:
 
     def send(self, meta, data):
         # send a message to the other side of the connector
-        if self._ended:
-            raise ConnectionEndedError()
+        if self._closed:
+            raise ConnectionClosedError()
 
         # pickle up the metadata so if something goes wrong, it happens now
         metabytes = pickle.dumps(meta)
@@ -157,7 +157,7 @@ class BusConnector:
 
     async def close(self):
         # we have officially ended
-        self._ended = True
+        self._closed = True
 
         # feed an EOF into the receive stream so that any receivers wake up
         # and stop

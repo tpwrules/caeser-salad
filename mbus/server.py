@@ -4,7 +4,7 @@ import asyncio
 import os
 import traceback
 
-from connector import ConnectionEndedError, BusConnector, MessageAction
+from connector import ConnectionClosedError, BusConnector, MessageAction
 
 class MessageBusServer:
     def __init__(self, bus_addr):
@@ -42,7 +42,7 @@ class MessageBusServer:
         for connector in connectors:
             await connector.close()
             # closing the connector will cause it to raise
-            # a ConnectionEndedError in recv()
+            # a ConnectionClosedError in recv()
             # which will stop the rx task
 
     def forget_connector(self, connector):
@@ -75,7 +75,7 @@ class MessageBusServer:
             while True:
                 meta, data = await connector.recv()
                 self.route(connector, meta, data)
-        except ConnectionEndedError:
+        except ConnectionClosedError:
             # expected cause of death
             pass
         except Exception as e:
@@ -110,9 +110,9 @@ class MessageBusServer:
                 # the metadata is just the tag name
                 try:
                     dest_connector.send(tag, data)
-                except ConnectionEndedError:
+                except ConnectionClosedError:
                     # oops, the connector is closed
-                    self.forget_connector(connector)
+                    self.forget_connector(dest_connector)
         elif action == MessageAction.SUBSCRIBE:
             # add this connector to the set of connectors for this tag
             # so that it will receive future messages
