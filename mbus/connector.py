@@ -18,9 +18,10 @@ class MessageAction(Enum):
     SEND = 3
 
 class BusConnector:
-    def __init__(self, reader, writer):
+    def __init__(self, reader, writer, recv_cb):
         self._reader = reader
         self._writer = writer
+        self._recv_cb = recv_cb
 
         self._closed = False
 
@@ -36,6 +37,10 @@ class BusConnector:
         # transmission is run in a separate task so the user doesn't have
         # to await for a transmission to complete
         self._tx_task = asyncio.ensure_future(self._tx_messages())
+
+        # we also need a task to handle received messages and call the user's
+        # callback
+        self._rx_task = asyncio.ensure_future(self._rx_messages())
 
     # Receive oriented functions
 
@@ -81,19 +86,29 @@ class BusConnector:
 
         return meta, data
 
-    async def recv(self):
-        if self._closed:
-            raise ConnectionClosedError()
-
+    async def _rx_messages(self):
+        # loop to receive messages and call the callback
         try:
-            meta, data = await self._rx_message()
-        except Exception as e:
-            # something went wrong
-            # close out the connection right now
-            await self.close()
-            raise ConnectionClosedError() from e
-
-        return meta, data
+            while True:
+                # receive one message
+                meta, data = await self._rx_message()
+                # and then call the callback
+                try:
+                    self._recv_cb(self, meta, data)
+                except:
+                    pass
+        except asyncio.CancelledError:
+            # let ourselves be cancelled naturally
+            # (we will only end up here if _closed is already True)
+            raise
+        except:
+            # otherwise, close out the connection
+            # we can't just await on close, because it awaits on us, and there
+            # would be a deadlock
+            # so note that we ended so the functions stop working
+            self._closed = True
+            # then schedule a task to call close for us
+            asyncio.ensure_future(self.close())
 
     # Transmit oriented functions
 
@@ -159,17 +174,24 @@ class BusConnector:
         # we have officially ended
         self._closed = True
 
-        # feed an EOF into the receive stream so that any receivers wake up
-        # and stop
-        # it's not entirely clear if i'm allowed to call this myself??
-        self._reader.feed_eof()
-
-        # try to cancel the transmit task
+        # try to cancel the tasks
         if not self._tx_task.done():
             self._tx_task.cancel()
+        if not self._rx_task.done():
+            self._rx_task.cancel()
 
-        # wait for it to cancel and/or eat any exceptions it produced
+        # wait for them to cancel and/or eat any exception they produced
         try:
             await self._tx_task
+        except:
+            pass
+        try:
+            await self._rx_task
+        except:
+            pass
+
+        # now call the callback to say we are finally done with everything
+        try:
+            self._recv_cb(self, None, None)
         except:
             pass

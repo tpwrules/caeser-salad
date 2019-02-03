@@ -56,8 +56,8 @@ async def recv(self):
 ### BusConnector
 This class handles reading and writing from the bus using a reader and writer.
 
-def __init__(self, reader, writer):
-    Create a connector with the given asyncio.StreamReader and asyncio.StreamWriter instances as returned by eg. asyncio.open_unix_connection.
+def __init__(self, reader, writer, recv_cb):
+    Create a connector with the given asyncio.StreamReader and asyncio.StreamWriter instances as returned by eg. asyncio.open_unix_connection. `recv_cb` is a callback that is called with the callback first, then `meta` and `data` as the two next parameters every time a message is received. When the connection closes, the callback is called with `meta` and `data` as None. Exceptions raised by the callback are ignored.
 
 def send(self, meta, data):
     Send a message to the other side of the connector. `meta` is an arbitrary Python object that gets pickled and unpickled on the other side. `data` is a bytes that gets transmitted unchanged. Raises ConnectionClosedError if the connection is closed.

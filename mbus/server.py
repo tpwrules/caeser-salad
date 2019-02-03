@@ -18,11 +18,7 @@ class MessageBusServer:
 
     def subscriber_connected(self, reader, writer):
         # instantiate a connector to manage this subscriber
-        connector = BusConnector(reader, writer)
-        # create a task to receive messages from this connector
-        asyncio.ensure_future(self.rx_messages(connector))
-        # it will die when the connector dies, so we don't need to
-        # keep it around
+        connector = BusConnector(reader, writer, self.handle_rx)
 
         self.connectors.add(connector)
 
@@ -69,24 +65,18 @@ class MessageBusServer:
             except KeyError:
                 pass
 
-    async def rx_messages(self, connector):
-        # task to receive and process messages from a particular connector
-        try:
-            while True:
-                meta, data = await connector.recv()
-                self.route(connector, meta, data)
-        except ConnectionClosedError:
-            # expected cause of death
-            pass
-        except Exception as e:
-            # just print the exception so this task can die in peace
-            traceback.print_exc()
-            # and make sure the connector is closed, no matter the error
-            await connector.close()
-        finally:
-            # make sure this connector is forgotten
-            # this may double forget it, but that's safe
+    def handle_rx(self, connector, meta, data):
+        # receive one message from the connector
+        if meta is None and data is None:
+            # the connector has closed, so forget it
             self.forget_connector(connector)
+            return
+
+        # otherwise, try to route the message
+        try:
+            self.route(connector, meta, data)
+        except Exception as e:
+            traceback.print_exc()
 
     def route(self, connector, meta, data):
         # the first element of meta is an action to do with the tag

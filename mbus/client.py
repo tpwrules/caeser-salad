@@ -21,36 +21,26 @@ class MessageBusClient:
         reader, writer = await asyncio.open_unix_connection(bus_addr)
 
         # create a connector to handle it
-        self._connector = BusConnector(reader, writer)
+        self._connector = BusConnector(reader, writer, self._handle_rx)
 
         # keep refcount of our subscriptions
         self._subscriptions = {}
 
         self._closed = False
 
-        # spawn task to handle messages received from the connector
-        self._rx_task = asyncio.ensure_future(self._rx_msg_task())
-
-    async def _rx_msg_task(self):
-        try:
-            while True:
-                tag, data = await self._connector.recv()
-                self._process(tag, data)            
-        except asyncio.CancelledError:
-            # let ourselves be cancelled naturally
-            # (we will only end up here if _closed is already True)
-            raise
-        except Exception as e:
-            # something went seriously wrong
-            if not isinstance(e, ConnectionClosedError):
-                traceback.print_exc()
-            # force ourselves closed
-            # we can't just await on close, because it awaits on us, and there
-            # would be a deadlock
-            # so note that we closed so the functions stop working
+    def _handle_rx(self, connector, meta, data):
+        # the connector is calling us with a new message
+        if meta is None and data is None:
+            # the connector died and is letting us know
+            # we did close
             self._closed = True
-            # then schedule a task to call close for us
             asyncio.ensure_future(self.close())
+            return
+
+        try:
+            self._process(meta, data)
+        except Exception as e:
+            traceback.print_exc()
 
     def _process(self, tag, data):
         try:
@@ -108,16 +98,6 @@ class MessageBusClient:
         # but wait for curent messages to be sent
         await self._connector.flush()
         await self._connector.close()
-
-        # cancel the receive task
-        if not self._rx_task.done():
-            self._rx_task.cancel()
-
-        # wait for it to cancel and/or eat any exceptions it produced
-        try:
-            await self._rx_task
-        except:
-            pass
 
         # for now we don't have to tell anybody else that we are closing
 
