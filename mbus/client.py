@@ -100,7 +100,8 @@ class MessageBusClient:
 
     def subscribe(self, tag):
         if self._close_task is not None:
-            raise ConnectionClosedError("can't subscribe: connection is closed")
+            raise ConnectionClosedError(
+                "can't subscribe: connection is closed")
 
         if not isinstance(tag, str):
             raise ValueError("tag must be string")
