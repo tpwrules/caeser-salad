@@ -48,6 +48,11 @@ class MessageBusClient:
         # or otherwise act as if the connection is closed
         self._close_task = None
 
+        # keep track of our callbacks
+        # this is a dictionary whose key is the message tag
+        # and whose value is a list of (mtype, callback) tuples
+        self._callbacks = {}
+
     def _handle_rx(self, connector, meta, data):
         # the connector is calling us with a new message
         if meta is None and data is None:
@@ -70,7 +75,16 @@ class MessageBusClient:
             print(tag, data)
             traceback.print_exc()
 
-        print("got a message", message)
+        # call all the callbacks for this tag
+        tag_cbs = self._callbacks.get(tag)
+        if tag_cbs is not None:
+            for mtype, callback in tag_cbs:
+                # is there a way to not have to isinstance every time?
+                if isinstance(message, mtype):
+                    try:
+                        callback(tag, message)
+                    except:
+                        pass
 
     def send(self, tag, message):
         if self._close_task is not None:
@@ -83,6 +97,7 @@ class MessageBusClient:
 
         self._connector.send((MessageAction.SEND, tag), mdata)
 
+
     def subscribe(self, tag):
         if self._close_task is not None:
             raise ConnectionClosedError("can't subscribe: connection is closed")
@@ -91,7 +106,8 @@ class MessageBusClient:
             raise ValueError("tag must be string")
 
         subscriptions = self._subscriptions.get(tag, 0)
-        self._connector.send((MessageAction.SUBSCRIBE, tag), b'')
+        if subscriptions == 0:
+            self._connector.send((MessageAction.SUBSCRIBE, tag), b'')
         self._subscriptions[tag] = subscriptions+1
 
     def unsubscribe(self, tag):
@@ -110,6 +126,40 @@ class MessageBusClient:
             self._connector.send((MessageAction.UNSUBSCRIBE, tag), b'')
 
 
+    def register_cb(self, mtype, callback, tag=None):
+        if self._close_task is not None:
+            raise ConnectionClosedError(
+                "can't register cb: connection is closed")
+
+        tag_cbs = self._callbacks.get(tag)
+        if tag_cbs is None:
+            tag_cbs = []
+            self._callbacks[tag] = tag_cbs
+
+        tag_cbs.append((mtype, callback))
+
+        if tag is not None:
+            self.subscribe(tag)
+
+    def unregister_cb(self, mtype, callback, tag=None):
+        if self._close_task is not None:
+            return
+
+        try:
+            tag_cbs = self._callbacks[tag]
+        except KeyError:
+            raise ValueError("can't unregister cb: no cbs for that tag")
+
+        try:
+            tag_cbs.remove((mtype, callback))
+        except ValueError:
+            raise ValueError(
+                "can't unregister cb: that mtype, cb pair was never registered")
+
+        if tag is not None:
+            self.unsubscribe(tag)
+
+
     def _start_close(self):
         if self._close_task is None:
             # schedule a task to do the actual closing
@@ -121,12 +171,19 @@ class MessageBusClient:
         await self._connector.flush()
         await self._connector.close()
 
-        # for now we don't have to tell anybody else that we are closing
+        # tell all the callbacks we are closing down
+        for tag_cbs in self._callbacks.values():
+            for mtype, callback in tag_cbs:
+                try:
+                    callback(None, None)
+                except:
+                    pass
 
         # clean up things we won't need anymore
         # probably not exactly necessary
         self._connector = None
         self._subscriptions = None
+        self._callbacks = None
 
     async def close(self):
         # start the close process (if it's not already started)
@@ -134,11 +191,13 @@ class MessageBusClient:
         # and wait for it to finish
         await self._close_task
 
+def msg_callback(tag, message):
+    print("got message", message, "on tag", tag)
 
 async def main():
     try:
         client = await MessageBusClient.create("./socket_mbus_main")
-        client.subscribe("test")
+        client.register_cb(object, msg_callback, tag="test")
         import random
         while True:
             x = random.randrange(0, 9999)

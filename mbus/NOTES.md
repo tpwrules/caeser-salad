@@ -29,10 +29,10 @@ def unsubscribe(self, tag):
 
 
 def register_cb(self, mtype, callback, tag=None):
-    Register a callback to be called when the specified message type is received. A message is considered `mtype` if `isinstance(message, mtype) is True`. If `tag` is not None, subscribe to the tag and only call the callback for messages with the specified tag. The callback is called with the message's tag and then the message. When the connection ends, the callback is called with both as None. Raises ConnectionClosedError if the connection is closed.
+    Register a callback to be called when the specified message type is received. A message is considered `mtype` if `isinstance(message, mtype) is True`. If `tag` is not None, subscribe to the tag and only call the callback for messages with the specified tag. If the same tuple is registered multiple times, it is called multiple times. The callback is called with the message's tag and then the message. When the connection ends, the callback is called with both as None, once for each time it has been registered. Exceptions raised by the callback are ignored. Raises ConnectionClosedError if the connection is closed.
 
 def unregister_cb(self, mtype, callback, tag=None):
-    Unregister a callback registered above and unsubscribes from the tag if not None. The callback must be the same object that was previously registered to the given type and tag. Raises ValueError if the callback was not previously registered. Does nothing if the connection is closed.
+    Unregister a callback registered above and unsubscribes from the tag if not None. The callback must be the same object that was previously registered to the given type and tag. Only the first occurrence is deleted. Raises ValueError if the callback was not previously registered. Does nothing if the connection is closed.
 
 
 def register_filter(self, messages):
