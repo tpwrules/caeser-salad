@@ -43,19 +43,19 @@ async def close(self):
 This class receives filtered messages from the bus and then queues them, then lets the user retrieve them with async methods.
 
 def __init__(self, client, filter=None):
-    Connect to `client` and wait for the messages in `filter`. `filter` is a dictionary whose keys are tags to watch for and values are iterables of `mtype`s to filter for. A key of None is valid and means to receive all messages. If `filter` itself is None, no messages are received.
+    Connect to `client` and wait for the messages in `filters`. `filters` is a dictionary whose keys are tags to watch for and values are iterables of `mtype`s to filter for. A key of None is valid and means to receive all messages. If `filter` itself is None, no messages are received.
 
 def add(self, mtype, tag=None):
-    Add the specific `mtype` to this filter, optionally only received by `tag`.
+    Add the specific `mtype` to this filter, optionally only received by `tag`. If the same tag, mtype is added multiple times, nothing happens. Raises ConnectionClosedError if the client is closed.
 
 def remove(self, mtype, tag=None):
-    Remove the specific `mtype` from this filter, on `tag`. Raises ValueError if it was not previously added.
+    Remove the specific `mtype` from this filter, on `tag`. Raises ValueError if it was not previously added. Does nothing if the client is closed.
 
 def remove_all(self):
-    Remove all itmes from the filter.
+    Remove all items from the filter. Does nothing if the client is closed.
 
 async def recv(self):
-    Wait for a message to be received by this filter, then return (tag, message). Raises asyncio.QueueEmpty if the filter has no messages and the queue becomes empty. Raises ConnectionClosedError if the connection is closed.
+    Wait for a message to be received by this filter, then return (tag, message).  Raises ConnectionClosedError if the connection is closed and the queue becomes empty. Raises asyncio.QueueEmpty if the filter has no messages and the queue becomes empty.
 
 # Other APIs
 

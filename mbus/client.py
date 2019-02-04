@@ -191,13 +191,159 @@ class MessageBusClient:
         # and wait for it to finish
         await self._close_task
 
+
+class MessageBusFilter:
+    def __init__(self, client, filters=None):
+        if client._close_task is not None:
+            raise ValueError("can't filter on closed client")
+
+        self._client = client
+
+        # true once the client is closed and recv should start
+        # emitting ConnectionClosedErrors
+        self._closed = False
+
+        # number of filters in this filter. if 0, it's considered empty
+        self._filter_count = 0
+
+        # dictionary of tags to a dictionary of mtypes to callbacks
+        self._filters = {}
+
+        self._queue = asyncio.Queue()
+
+        # filter the messages the user asked
+        if filters is not None:
+            for tag, mtypes in filters.items():
+                for mtype in mtypes:
+                    self.add(mtype, tag)
+
+    def add(self, mtype, tag=None):
+        if self._closed is True:
+            raise ConnectionClosedError(
+                "can't add to filter: connection closed")
+
+        tag_cbs = self._filters.get(tag)
+        if tag_cbs is None:
+            tag_cbs = {}
+            self._filters[tag] = tag_cbs
+
+        if mtype not in tag_cbs:
+            # create a new callback
+            # we do this lambda to a static method so that the client doesn't
+            # have a reference to us, only our queue
+            cb = lambda t, m: MessageBusFilter._handle_cb(t, m, self._queue)
+            tag_cbs[mtype] = cb
+            self._client.register_cb(mtype, cb, tag)
+            self._filter_count += 1
+
+    def remove(self, mtype, tag=None):
+        if self._closed is True:
+            return
+
+        try:
+            tag_cbs = self._filters[tag]
+        except KeyError:
+            raise ValueError(
+                "can't remove from filter: tag doesn't exist")
+
+        try:
+            cb = tag_cbs.pop(mtype)
+        except KeyError:
+            raise ValueError(
+                "can't remove from filter: mtype isn't being filtered")
+
+        self._client.unregister_cb(mtype, cb, tag)
+        self._filter_count -= 1
+        if self._filter_count == 0:
+            # put a None in the queue to let anybody in recv wake up and see
+            # that we're filterless
+            self._queue.put_nowait("filterless")
+
+    def remove_all(self):
+        if self._closed is True:
+            return
+
+        for tag, tag_cbs in self._filters.items():
+            for mtype, cb in tag_cbs:
+                self._client.unregister_cb(mtype, cb, tag)
+
+        self._filters = {}
+        self._filter_count = 0
+        # put a None in the queue to let anybody in recv wake up and see
+        # that we're filterless
+        self._queue.put_nowait("filterless")
+
+    async def recv(self):
+        while True:
+            if self._queue.qsize() == 0:
+                if self._closed:
+                    raise ConnectionClosedError(
+                        "can't receive: connection closed and queue empty")
+                elif self._filter_count == 0:
+                    raise asyncio.QueueEmpty("no messages: filter is empty")
+
+            # item is a (tag, message) tuple
+            item = await self._queue.get()
+            if isinstance(item, tuple):
+                return item
+            elif item == "closed":
+                # close if we got a call saying we need to close down
+                # we have to do it ourselves since the callback shouldn't
+                # hold a reference to us
+                if not self._closed:
+                    self._close()
+
+    def _close(self):
+        # stop anything more from being done
+        self._closed = True
+
+        # unregister all the callbacks so the client stops filling up the queue
+        # but if the client is closed, it is already doing that itself
+        if self._client._close_task is None:
+            for tag, tag_cbs in self._filters.items():
+                for mtype, cb in tag_cbs:
+                    self._client.unregister_cb(mtype, cb, tag)
+
+        # clean up things we won't need anymore
+        # probably not exactly necessary
+        self._filters = None
+        self._filter_count = 0
+
+    def __del__(self):
+        # close ourselves on delete so the client doesn't keep filling
+        # up the queue with stuff
+        self._close()
+
+    # this is a static method so we can give a reference to it to the client
+    # and it won't hold onto self and prevent us from being garbage collected
+    @staticmethod
+    def _handle_cb(tag, message, queue):
+        if tag is None and message is None:
+            # client is closing
+            queue.put_nowait("closed")
+        else:
+            queue.put_nowait((tag, message))
+
+
 def msg_callback(tag, message):
     print("got message", message, "on tag", tag)
 
+async def ftest(mfilter):
+    while True:
+        try:
+            tag, message = await mfilter.recv()
+        except:
+            print("filter closing")
+            break
+        print("filtered message", message, "on tag", tag)
+
 async def main():
+    client = None
     try:
         client = await MessageBusClient.create("./socket_mbus_main")
         client.register_cb(object, msg_callback, tag="test")
+        mfilter = MessageBusFilter(client, filters={"test": [object]})
+        asyncio.create_task(ftest(mfilter))
         import random
         while True:
             x = random.randrange(0, 9999)
@@ -205,8 +351,9 @@ async def main():
             client.send("test", x)
             await asyncio.sleep(5)
     finally:
-        print("closing out client")
-        await client.close()
+        if client is not None:
+            print("closing out client")
+            await client.close()
 
 
 if __name__ == "__main__":
