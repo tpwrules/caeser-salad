@@ -10,11 +10,11 @@ class WProxy:
     def write(self, data):
         print(self.conn.send(data))
 
-mavlink = importlib.import_module("pymavlink.dialects.v10.ardupilotmega")
+mavlink = importlib.import_module("pymavlink.dialects.v20.ardupilotmega")
 
 
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-conn.connect(("localhost", 5760))
+conn.connect(("localhost", 5763))
 
 mav = mavlink.MAVLink(WProxy(conn), 
     srcSystem=254, srcComponent=195, use_native=True)
