@@ -34,13 +34,13 @@ async def main():
     mbus = await mclient.MessageBusClient.create(
         "./socket_mbus_main")
     mfilter = mclient.MessageBusFilter(mbus,
-        {"mav_test": [MAVMessageToComponent]})
+        {"mav_test": [object]})
 
     mbus.send("mav_system",
         ChangeDestinationMessage("mav_test", create=True))
 
     while True:
-        msg = await mfilter.recv()
+        tag, msg = await mfilter.recv()
         print("mc got it", msg.msg, msg.src, msg.dest)
 
 if __name__ == "__main__":

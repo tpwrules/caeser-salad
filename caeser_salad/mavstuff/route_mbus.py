@@ -1,6 +1,7 @@
 # this file manages all the message bus connections for the MAVlink router
 
 import asyncio
+import traceback
 
 import caeser_salad.mavstuff.destination as destination
 
@@ -10,6 +11,8 @@ from caeser_salad.mavstuff.mbus_component import MAVSystemMessage, \
 
 from caeser_salad.mbus import client as mclient
 
+# hack needed to make pickle loading work
+# idk exactly why though
 import sys
 sys.modules["__main__"].ChangeDestinationMessage = ChangeDestinationMessage
 sys.modules["__main__"].MAVMessageFromComponent = MAVMessageFromComponent
@@ -28,7 +31,7 @@ class MBusDestination(destination.Destination):
         # we can't receive all of them in one destination because then
         # we can't route
         self.mfilter = mclient.MessageBusFilter(mbus, 
-            {tag, [MAVMessageFromComponent]})
+            {tag: [MAVMessageFromComponent]})
 
 
     async def _get_msg(self):
@@ -59,11 +62,9 @@ class MBusDestinationManager:
 
         while True:
             try:
-                msg = await mfilter.recv()
-                print(msg)
+                tag, msg = await mfilter.recv()
                 if isinstance(msg, ChangeDestinationMessage):
                     if msg.create:
-                        print("NEW mbus dest", msg.tag)
                         # allocate a new destination
                         destination = MBusDestination(msg.tag, mbus)
                         self.router.add_destination(destination)
@@ -75,5 +76,6 @@ class MBusDestinationManager:
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                print("MANAGE MSG FAILED")
+                print("MANAGE MSG FAILED", e)
                 traceback.print_exc()
+

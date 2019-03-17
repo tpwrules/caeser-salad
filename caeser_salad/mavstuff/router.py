@@ -31,7 +31,7 @@ class Router:
                     # don't loop back
                     if destination is from_dest:
                         continue
-                    was_sent = dest.write_msg(msg, src, dest)
+                    was_sent = destination.write_msg(msg, src, dest)
 
             except asyncio.CancelledError:
                 raise
