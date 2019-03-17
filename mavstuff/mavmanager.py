@@ -4,7 +4,7 @@ import asyncio
 
 import router as mav_router
 import destination
-# import route_mbus
+import route_mbus
 
 async def main():
     try:
@@ -13,10 +13,12 @@ async def main():
         route_task = asyncio.create_task(router.route())
 
         # now connect to the message bus
-        # mbus_manager = \
-        #     mav_mbus.MBusDestinationManager("./socket_mbus_main", router)
-        # # and start the manager on its own task too
-        # manage_task = asyncio.create_task(mbus_manager.manage())
+        mbus_manager = \
+            route_mbus.MBusDestinationManager(router)
+
+        # and start the manager on its own task too
+        manage_task = asyncio.create_task(
+            mbus_manager.manage("../mbus/socket_mbus_main"))
 
         # now that we are conneced to the rest of the system, 
         # connect to the drone
@@ -30,7 +32,18 @@ async def main():
             await asyncio.sleep(1)
     finally:
         # wait for the tasks to be cancelled
-        await route_task
+        if not route_task.cancelled():
+            route_task.cancel()
+        if not manage_task.cancelled():
+            manage_task.cancel()
+        try:
+            await route_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await manage_task
+        except asyncio.CancelledError:
+            pass
 
 if __name__ == "__main__":
     asyncio.run(main())
