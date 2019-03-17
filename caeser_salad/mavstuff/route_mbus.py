@@ -56,12 +56,12 @@ class MBusDestinationManager:
             try:
                 tag, msg = await mfilter.recv()
                 if isinstance(msg, ChangeDestinationMessage):
-                    if msg.create:
+                    if msg.create and msg.tag not in self._destinations:
                         # allocate a new destination
                         destination = MBusDestination(msg.tag, mbus)
                         self.router.add_destination(destination)
                         self._destinations[msg.tag] = destination
-                    else:
+                    elif not msg.create:
                         # destroy an existing destination
                         destination = self._destinations.pop(msg.tag)
                         await self.router.remove_destination(destination)
