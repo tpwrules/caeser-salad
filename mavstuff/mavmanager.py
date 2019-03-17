@@ -2,14 +2,14 @@
 
 import asyncio
 
-import router
+import router as mav_router
 import destination
 import route_mbus
 
 async def main():
     try:
         # first, start up the router in its own task
-        router = router.Router()
+        router = mav_router.Router()
         route_task = asyncio.create_task(router.route())
 
         # now connect to the message bus

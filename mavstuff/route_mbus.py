@@ -4,4 +4,7 @@ import asyncio
 
 import destination
 
-from ..mbus import client as mclient
+import repackage
+repackage.up()
+
+from mbus import client as mclient

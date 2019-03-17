@@ -4,7 +4,7 @@ import asyncio
 import pickle
 import traceback
 
-from connector import ConnectionClosedError, BusConnector, MessageAction
+from .connector import ConnectionClosedError, BusConnector, MessageAction
 
 # how we close down
 # closing can start from various sources
