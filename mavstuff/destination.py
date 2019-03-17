@@ -23,7 +23,6 @@ class Destination:
         msg, src = await self._get_msg()
 
         # for now, don't bother parsing the message
-        print(msg, type(msg))
 
         return msg, src
 

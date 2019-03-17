@@ -29,9 +29,8 @@ async def main():
         while True:
             await asyncio.sleep(1)
     finally:
-        # theoretically, close things out
-        # i don't think much needs to be done here?
-        pass
+        # wait for the tasks to be cancelled
+        await route_task
 
 if __name__ == "__main__":
     asyncio.run(main())
