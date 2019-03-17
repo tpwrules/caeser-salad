@@ -5,10 +5,8 @@
 
 import asyncio
 
-import repackage
-repackage.up()
-from mbus import client as mclient
-from mbus.message import Message
+from caeser_salad.mbus import client as mclient
+from caeser_salad.mbus.message import Message
 
 class MAVSystemMessage(Message):
     pass
@@ -34,7 +32,7 @@ class MAVMessageFromComponent(Message):
 
 async def main():
     mbus = await mclient.MessageBusClient.create(
-        "../mbus/socket_mbus_main")
+        "./socket_mbus_main")
     mfilter = mclient.MessageBusFilter(mbus,
         {"mav_test": [MAVMessageToComponent]})
 

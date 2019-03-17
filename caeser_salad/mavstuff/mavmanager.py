@@ -2,9 +2,9 @@
 
 import asyncio
 
-import router as mav_router
-import destination
-import route_mbus
+import caeser_salad.mavstuff.router as mav_router
+import caeser_salad.mavstuff.destination as destination
+import caeser_salad.mavstuff.route_mbus as route_mbus
 
 async def main():
     try:
@@ -18,7 +18,7 @@ async def main():
 
         # and start the manager on its own task too
         manage_task = asyncio.create_task(
-            mbus_manager.manage("../mbus/socket_mbus_main"))
+            mbus_manager.manage("./socket_mbus_main"))
 
         # now that we are conneced to the rest of the system, 
         # connect to the drone

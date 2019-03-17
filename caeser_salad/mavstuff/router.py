@@ -1,8 +1,6 @@
 import asyncio
 import traceback
 
-import destination
-
 class Router:
     def __init__(self):
         # map of destinations to the task receiving from them

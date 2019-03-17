@@ -5,7 +5,7 @@ import os
 import traceback
 import sys
 
-from connector import ConnectionClosedError, BusConnector, MessageAction
+from .connector import ConnectionClosedError, BusConnector, MessageAction
 
 class MessageBusServer:
     def __init__(self, bus_addr):

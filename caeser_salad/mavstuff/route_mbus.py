@@ -2,18 +2,17 @@
 
 import asyncio
 
-import destination
-from mbus_component import MAVSystemMessage, ChangeDestinationMessage, \
+import caeser_salad.mavstuff.destination as destination
+
+from caeser_salad.mavstuff.mbus_component import MAVSystemMessage, \
+    ChangeDestinationMessage, \
     MAVMessageToComponent, MAVMessageFromComponent
 
-import repackage
-repackage.up()
+from caeser_salad.mbus import client as mclient
 
-from mbus import client as mclient
-
-# hack im so sorry
 import sys
-sys.modules['ChangeDestinationMessage'] = ChangeDestinationMessage
+sys.modules["__main__"].ChangeDestinationMessage = ChangeDestinationMessage
+sys.modules["__main__"].MAVMessageFromComponent = MAVMessageFromComponent
 
 # act as a destination for components on the message bus
 class MBusDestination(destination.Destination):
