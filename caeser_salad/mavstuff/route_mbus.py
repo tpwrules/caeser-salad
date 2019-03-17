@@ -5,17 +5,9 @@ import traceback
 
 import caeser_salad.mavstuff.destination as destination
 
-from caeser_salad.mavstuff.mbus_component import MAVSystemMessage, \
-    ChangeDestinationMessage, \
-    MAVMessageToComponent, MAVMessageFromComponent
+from caeser_salad.mavstuff.mbus_messages import *
 
 from caeser_salad.mbus import client as mclient
-
-# hack needed to make pickle loading work
-# idk exactly why though
-import sys
-sys.modules["__main__"].ChangeDestinationMessage = ChangeDestinationMessage
-sys.modules["__main__"].MAVMessageFromComponent = MAVMessageFromComponent
 
 # act as a destination for components on the message bus
 class MBusDestination(destination.Destination):
