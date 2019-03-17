@@ -22,7 +22,13 @@ class Destination:
     async def read_msg(self):
         msg, src = await self._get_msg()
 
-        # for now, don't bother parsing the message
+        # we have to monitor for HEARTBEAT messages so we can build
+        # our routing table
+        if isinstance(msg, mavlink.MAVLink_heartbeat_message):
+            if src not in self._compids:
+                self._compids.add(src)
+            if src[0] not in self._sysids:
+                self._sysids.add(src[0])
 
         return msg, src
 
