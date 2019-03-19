@@ -6,19 +6,26 @@ import caeser_salad.mavstuff.router as mav_router
 import caeser_salad.mavstuff.destination as destination
 import caeser_salad.mavstuff.route_mbus as route_mbus
 
+import caeser_salad.mbus.client as mclient
+
+mbus_tags = (
+    "mav_test", # testing the mbus component
+)
+
 async def main():
     try:
         # first, start up the router in its own task
         router = mav_router.Router()
         route_task = asyncio.create_task(router.route())
 
-        # now connect to the message bus
-        mbus_manager = \
-            route_mbus.MBusDestinationManager(router)
+        # connect to the message bus
+        mbus = await mclient.MessageBusClient.create("./socket_mbus_main")
 
-        # and start the manager on its own task too
-        manage_task = asyncio.create_task(
-            mbus_manager.manage("./socket_mbus_main"))
+        # make a destination for each mbus tag
+        mbus_destinations = \
+            (route_mbus.MBusDestination(tag, mbus) for tag in mbus_tags)
+        for the_destination in mbus_destinations:
+            router.add_destination(the_destination)
 
         # now that we are conneced to the rest of the system, 
         # connect to the drone
@@ -31,19 +38,8 @@ async def main():
         while True:
             await asyncio.sleep(1)
     finally:
-        # wait for the tasks to be cancelled
-        if not route_task.cancelled():
-            route_task.cancel()
-        if not manage_task.cancelled():
-            manage_task.cancel()
-        try:
-            await route_task
-        except asyncio.CancelledError:
-            pass
-        try:
-            await manage_task
-        except asyncio.CancelledError:
-            pass
+        # we need to close everything out
+        pass
 
 if __name__ == "__main__":
     asyncio.run(main())

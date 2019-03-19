@@ -1,15 +1,10 @@
 from caeser_salad.mbus.message import Message
 
+# these all need to be in their own module so that the unpickler
+# can find them reliably
+
 class MAVSystemMessage(Message):
     pass
-
-class ChangeDestinationMessage(MAVSystemMessage):
-    def __init__(self, tag, create):
-        # change the destination on the given tag
-        # if create = True, create it
-        # otherwise, destroy it
-        self.tag = tag
-        self.create = create
 
 class MAVMessageToComponent(Message):
     def __init__(self, msg, src, dest):

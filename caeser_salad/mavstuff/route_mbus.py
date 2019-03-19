@@ -35,39 +35,3 @@ class MBusDestination(destination.Destination):
         self.mbus.send(self.tag,
             MAVMessageToComponent(msg, src, dest))
 
-
-# manage destinations for the message bus
-# this thing's job is to add and remove destinations in response to messages
-# on the mav_system tag
-class MBusDestinationManager:
-    def __init__(self, router):
-        self.router = router
-
-        # dictionary from tags to destinations
-        self._destinations = {}
-
-    async def manage(self, bus_addr):
-        mbus = await mclient.MessageBusClient.create(bus_addr)
-
-        mfilter = mclient.MessageBusFilter(mbus, 
-            {"mav_system": [MAVSystemMessage]})
-
-        while True:
-            try:
-                tag, msg = await mfilter.recv()
-                if isinstance(msg, ChangeDestinationMessage):
-                    if msg.create and msg.tag not in self._destinations:
-                        # allocate a new destination
-                        destination = MBusDestination(msg.tag, mbus)
-                        self.router.add_destination(destination)
-                        self._destinations[msg.tag] = destination
-                    elif not msg.create:
-                        # destroy an existing destination
-                        destination = self._destinations.pop(msg.tag)
-                        await self.router.remove_destination(destination)
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                print("MANAGE MSG FAILED", e)
-                traceback.print_exc()
-

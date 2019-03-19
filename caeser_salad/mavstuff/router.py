@@ -45,16 +45,7 @@ class Router:
         rx_task = asyncio.create_task(self._rx_dest(destination))
         # and save it so we can send messages to that destination
         self._destinations[destination] = rx_task
-
-    async def remove_destination(self, destination):
-        # get the task receiving from this destination
-        # (and remove it so we don't send to that destination)
-        rx_task = self._destinations.pop(destination)
-        # cancel it so we don't receive anymore
-        rx_task.cancel()
-        # wait for it to be fully cancelled
-        await rx_task
-
+        
     async def _rx_dest(self, destination):
         try:
             while True:
