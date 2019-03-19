@@ -27,7 +27,7 @@ class MBusDestination(destination.Destination):
 
 
     async def _get_msg(self):
-        bus_msg = await self.mfilter.recv()
+        tag, bus_msg = await self.mfilter.recv()
         return bus_msg.msg, bus_msg.src
 
     def _put_msg(self, msg, src, dest):

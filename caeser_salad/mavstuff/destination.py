@@ -1,6 +1,7 @@
 # this class encompasses a mavlink Destination
 
 import pymavlink.dialects.v20.ardupilotmega as mavlink
+import types
 
 class Destination:
     def __init__(self):
@@ -55,6 +56,8 @@ class BytesDestination(Destination):
             self.srcSystem = src[0]
             self.srcComponent = src[1]
             self.seq = 0
+            self.signing = types.SimpleNamespace()
+            self.signing.sign_outgoing = False
 
         def pack(self, msg):
             # tell the message to get packed with ourselves as the mav state
@@ -102,7 +105,7 @@ class BytesDestination(Destination):
     def _put_msg(self, msg, src, dest):
         source = self._sources.get(src)
         if source is None:
-            source = Source(src)
+            source = BytesDestination.Source(src)
             self._sources[src] = source
 
         self._write(source.pack(msg))
