@@ -1,6 +1,8 @@
 import asyncio
 import traceback
 
+
+
 class Router:
     def __init__(self):
         # map of destinations to the task receiving from them
@@ -24,7 +26,8 @@ class Router:
 
                 dest = tuple(dest)
 
-                print("ROUTING {}: {}->{}".format(msg, src, dest))
+                if msg.name != "HEARTBEAT":
+                    print("ROUTING {}: {}->{}".format(msg, src, dest))
 
                 # now that we know, try to send it to all our destinations
                 for destination in self._destinations.keys():
