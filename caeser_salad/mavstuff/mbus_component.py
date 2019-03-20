@@ -36,7 +36,7 @@ class ComponentCommandHandler:
             raise ValueError("{} is not a MAV_RESULT".format(result))
         if self._last_cmd is None:
             raise RuntimeError("last command was already responded to")
-        self._component._send_msg(mavlink.MAVLink_command_ack_message(
+        self._component.send_msg(mavlink.MAVLink_command_ack_message(
             self._last_cmd.msg.command, result))
         self._last_cmd = None
 
@@ -121,9 +121,9 @@ class MBusComponent:
         # to do: send current state
         while True:
             hb = mavlink.MAVLink_heartbeat_message(
-                mavlink.MAV_TYPE_ONBOARD_CONTROLLER, 0, 0, 0, 
+                mavlink.MAV_TYPE_CAMERA, 0, 0, 0, 
                 mavlink.MAV_STATE_ACTIVE, 3)
-            self._send_msg(hb)
+            self.send_msg(hb)
 
             await asyncio.sleep(1)
 
@@ -148,7 +148,7 @@ class MBusComponent:
                     queue.put_nowait(msg)
 
 
-    def _send_msg(self, msg):
+    def send_msg(self, msg):
         # pack it up with our source and send it to the message bus
         self._mbus.send(self._tag, MAVMessageFromComponent(msg, self._src))
 
