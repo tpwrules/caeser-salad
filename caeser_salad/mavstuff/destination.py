@@ -36,6 +36,7 @@ class Destination:
     # write one message, if this destination should send it
     # if we sent it, return True
     def write_msg(self, msg, src, dest):
+        should_send = False
         if dest[0] == 0:
             should_send = True
         elif dest[0] in self._sysids and dest[1] == 0:
