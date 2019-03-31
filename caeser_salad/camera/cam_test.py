@@ -29,9 +29,11 @@ async def main():
         mavlink.MAV_CMD_REQUEST_CAMERA_SETTINGS,
         mavlink.MAV_CMD_REQUEST_STORAGE_INFORMATION,
         mavlink.MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS,
+        mavlink.MAV_CMD_IMAGE_START_CAPTURE,
     ))
 
     # receive commands and be a camera
+    num_imgs = 0
     while True:
         cmd = await cmd_handler.next_command()
         print("asked", cmd.msg)
@@ -98,6 +100,24 @@ async def main():
                 recording_time_ms=0,
                 available_capacity=65536
             )
+            component.send_msg(msg)
+        elif cmd_num == mavlink.MAV_CMD_IMAGE_START_CAPTURE:
+            print("CAPTURING AN IMAGE!!!")
+            cmd_handler.respond(mavlink.MAV_RESULT_ACCEPTED)
+            msg = mavlink.MAVLink_camera_image_captured_message(
+                time_boot_ms=int((time.monotonic()-bt)*1000),
+                time_utc=0,
+                camera_id=1,
+                lat=5,
+                lon=3,
+                alt=59,
+                relative_alt=50,
+                q=[0, 0, 0, 0],
+                image_index=num_imgs,
+                capture_result=1,
+                file_url=b"blah"
+            )
+            num_imgs += 1
             component.send_msg(msg)
 
 asyncio.run(main())
