@@ -29,7 +29,7 @@ async def main():
 
         # now that we are conneced to the rest of the system, 
         # connect to the drone
-        reader, writer = await asyncio.open_connection('localhost', 5763)
+        reader, writer = await asyncio.open_connection('141.225.163.227', 5763)
         # it is its own destination, so create one for it
         drone_dest = destination.StreamDestination(reader, writer)
         router.add_destination(drone_dest)
