@@ -93,13 +93,21 @@ class BytesDestination(Destination):
     async def _get_msg(self):
         # make sure we send out any messages already in the buffer first
         # so we don't unnecessarily wait for more bytes
-        msg = self._mav.parse_char(b'')
+        msg = None
+        new_bytes = b''
         while msg is None:
-            # receive some bytes from the transport
-            new_bytes = await self._read()
-            # and try to parse a message from them
-            msg = self._mav.parse_char(new_bytes)
-            # if None, there weren't enough bytes
+            try:
+                msg = self._mav.parse_char(new_bytes)
+            except mavlink.MAVError as e:
+                if "invalid MAVLink prefix" in str(e):
+                    # this likely because we started receiving in the middle
+                    # of the mavlink message
+                    pass
+                else:
+                    print("WARNING: MAVLink decode error!")
+                    traceback.print_exc()
+            if msg is None:
+                new_bytes = await self._read()
 
         return msg, (msg.get_srcSystem(), msg.get_srcComponent())
 
