@@ -1,6 +1,9 @@
 # this file runs the mavlink stuff for the salad
 
 import asyncio
+import sys
+
+import serial_asyncio
 
 import caeser_salad.mavstuff.router as mav_router
 import caeser_salad.mavstuff.destination as destination
@@ -29,7 +32,10 @@ async def main():
 
         # now that we are conneced to the rest of the system, 
         # connect to the drone
-        reader, writer = await asyncio.open_connection('141.225.163.227', 5763)
+        #reader, writer = await asyncio.open_connection('141.225.163.227', 5763)
+        reader, writer = \
+            await serial_asyncio.open_serial_connection(
+                url=sys.argv[1], baudrate=115200)
         # it is its own destination, so create one for it
         drone_dest = destination.StreamDestination(reader, writer)
         router.add_destination(drone_dest)
