@@ -1,7 +1,7 @@
 # this file runs the mavlink stuff for the salad
 
 import asyncio
-import sys
+import argparse
 
 import serial_asyncio
 
@@ -15,7 +15,26 @@ mbus_tags = (
     "mav_test", # testing the mbus component
 )
 
-async def main():
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Connect the salad to a real MAVLink system.")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--host", help="TCP host to connect to")
+    group.add_argument("--serial", help="RS232 device name to connect to")
+    parser.add_argument("--baud", type=int, default=115200,
+        help="RS232 baud rate")
+    parser.add_argument("--port", type=int, default=5763,
+        help="TCP port")
+    return parser.parse_args()
+
+async def main(args):
+    # try and connect to the mavlink port
+    if args.host is not None: # TCP connection
+        reader, writer = await asyncio.open_connection(args.host, args.port)
+    else: # can only be a serial connection
+        reader, writer = await asyncio.open_serial_connection(
+            url=args.serial, baudrate=args.baud)
+
     try:
         # first, start up the router in its own task
         router = mav_router.Router()
@@ -31,12 +50,7 @@ async def main():
             router.add_destination(the_destination)
 
         # now that we are conneced to the rest of the system, 
-        # connect to the drone
-        #reader, writer = await asyncio.open_connection('141.225.163.227', 5763)
-        reader, writer = \
-            await serial_asyncio.open_serial_connection(
-                url=sys.argv[1], baudrate=115200)
-        # it is its own destination, so create one for it
+        # create a destination to receive messages from the drone
         drone_dest = destination.StreamDestination(reader, writer)
         router.add_destination(drone_dest)
 
@@ -48,4 +62,5 @@ async def main():
         pass
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    args = parse_args()
+    asyncio.run(main(args))
