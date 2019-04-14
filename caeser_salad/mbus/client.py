@@ -74,6 +74,7 @@ class MessageBusClient:
             print("MESSAGE UNPICKLE FAILURE")
             print(tag, data)
             traceback.print_exc()
+            return
 
         # call all the callbacks for this tag
         tag_cbs = self._callbacks.get(tag)
