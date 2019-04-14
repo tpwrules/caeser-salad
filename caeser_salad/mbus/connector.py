@@ -48,12 +48,6 @@ class BusConnector:
         # or otherwise act as if the connection is closed
         self._close_task = None
 
-        # we have a list of chunks of received bytes
-        # this approach lets us avoid joining everything until we know we
-        # have enough
-        self._rx_chunks = []
-        self._rx_bytes = 0 # how many bytes our chunks total to
-
         # a simple queue holds the messages to be transmitted
         self._tx_queue = asyncio.Queue()
 
@@ -66,46 +60,20 @@ class BusConnector:
 
     # Receive oriented functions
 
-    async def _read_exactly(self, n):
-        # read exactly n bytes of data from the reader
-
-        if n == 0:
-            return b''
-
-        while self._rx_bytes < n:
-            data = await self._reader.read(65536)
-
-            if len(data) == 0: # reader was disconnected
-                # we will never have enough bytes cause this loop will add 0
-                # so just die now
-                raise ConnectionResetError("reader at EOF")
-
-            self._rx_chunks.append(data)
-            self._rx_bytes += len(data)
-
-        # we have enough so join the chunks together into one piece
-        data = b''.join(self._rx_chunks)
-        # and split it into what we want and what's left over
-        out, remaining = data[:n], data[n:]
-        self._rx_chunks = [remaining]
-        self._rx_bytes = len(remaining)
-
-        return out
-
     async def _rx_messages(self):
         # loop to receive messages and call the callback
         try:
             while True:
                 # get 8 bytes of length: one uint32_t for meta, one for data
-                lens = await self._read_exactly(8)
+                lens = await self._reader.readexactly(8)
                 metalen, datalen = struct.unpack("<II", lens)
 
                 # read and unpickle the metadata
-                metabytes = await self._read_exactly(metalen)
+                metabytes = await self._reader.readexactly(metalen)
                 meta = pickle.loads(metabytes)
 
                 # and just read the data bytes
-                data = await self._read_exactly(datalen)
+                data = await self._reader.readexactly(datalen)
 
                 # tell the callback about this new message
                 try:
@@ -188,7 +156,8 @@ class BusConnector:
 
         try:
             await self._rx_task
-        except (asyncio.CancelledError, ConnectionResetError):
+        except (asyncio.CancelledError, ConnectionResetError,
+                asyncio.IncompleteReadError):
             pass
         except:
             print("RX TASK EXCEPTION ON", self, file=sys.stderr)
@@ -211,8 +180,6 @@ class BusConnector:
         self._tx_queue = None
 
         self._reader = None
-        self._rx_task = None
-        self._rx_chunks = None
         self._recv_cb = None
 
         # and we are finally, totally, closed! no tasks running, no objects
