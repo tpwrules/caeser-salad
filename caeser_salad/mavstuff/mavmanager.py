@@ -7,7 +7,7 @@ import serial_asyncio
 
 import caeser_salad.mavstuff.router as mav_router
 import caeser_salad.mavstuff.destination as destination
-import caeser_salad.mavstuff.route_mbus as route_mbus
+import caeser_salad.mavstuff.destination_mbus as destination_mbus
 
 import caeser_salad.mbus.client as mclient
 
@@ -45,7 +45,7 @@ async def main(args):
 
         # make a destination for each mbus tag
         mbus_destinations = \
-            (route_mbus.MBusDestination(tag, mbus) for tag in mbus_tags)
+            (destination_mbus.MBusDestination(tag, mbus) for tag in mbus_tags)
         for the_destination in mbus_destinations:
             router.add_destination(the_destination)
 
