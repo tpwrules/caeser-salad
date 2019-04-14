@@ -119,10 +119,9 @@ class MessageBusClient:
         if not isinstance(tag, str):
             raise ValueError("tag must be string")
 
-        subscriptions = self._subscriptions.get(tag)
-        if subscriptions is None:
-            return
-        self._subscriptions[tag] = subscriptions-1
+        subscriptions = self._subscriptions.get(tag, 0)
+        if subscriptions > 0:
+            self._subscriptions[tag] = subscriptions-1
 
         if subscriptions-1 == 0:
             self._connector.send((MessageAction.UNSUBSCRIBE, tag), b'')
