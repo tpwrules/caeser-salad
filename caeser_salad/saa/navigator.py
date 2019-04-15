@@ -72,6 +72,25 @@ async def update_params(msg_filter, pk):
         if isinstance(msg, mavlink.MAVLink_vfr_hud_message):
             pk.airspeed = msg.airspeed
             pk.heading = msg.heading
+        elif isinstance(msg, mavlink.MAVLink_heartbeat_message):
+            if src != (1, 1): continue
+            name = mavlink.enums["COPTER_MODE"][msg.custom_mode].name
+            pk.mode = name.replace("COPTER_MODE_", "").lower()
+            pk.armed = True if msg.base_mode & 128 else False
+
+async def listen_for_hits(mbus, pk):
+    mf = mclient.MessageBusFilter(mbus, filters={"saa_collision": (str,)})
+
+    while True:
+        tag, msg = await mf.recv()
+        pk.collision = msg
+
+# do the sense and avoid task
+async def avoid(msg_filter, pk):
+    print("sensing")
+
+    while True:
+        print(await pk.wait_for("collision"))
 
 async def main():
     # system boot time
@@ -110,14 +129,44 @@ async def main():
     pk = ParamKeeper((
         # from VFR_HUD
         "airspeed",
-        "heading"
+        "heading",
+        # from HEARTBEAT
+        "mode",
+        "armed",
+        # from the sense engine
+        "collision"
     ))
 
     # start a task to keep it running
     pk_task = asyncio.create_task(update_params(msg_filter, pk))
 
+    # start another task to receive collision information
+    coll_task = asyncio.create_task(listen_for_hits(mbus, pk))
+
     while True:
-        print(await pk.wait_for("airspeed"), pk.heading)
+        # wait for the copter to switch to auto mode
+        while not pk.armed or pk.mode != "auto":
+            await pk.wait_until("mode", lambda m: m == "auto")
+
+        # start a task to do the avoidance
+        av_task = asyncio.create_task(avoid(msg_filter, pk))
+
+        while not av_task.done():
+            curr_mode = await pk.wait_for("mode")
+            # if the copter switches out of auto, brake, or guided mode
+            # we need to kill the avoid routine because the pilot
+            # is back in control
+            if curr_mode not in ("auto", "brake", "guided") or not pk.armed:
+                av_task.cancel()
+
+        print("COLLISION PROGRAM ENDING")
+
+        # wait for the task to finish before we start a new one
+        try:
+            await av_task
+        except asyncio.CancelledError:
+            pass
+
 
 if __name__ == "__main__":
     asyncio.run(main())
