@@ -148,7 +148,7 @@ class BusConnector:
         # wait for them to cancel and/or print any exception they produced
         try:
             await self._tx_task
-        except (asyncio.CancelledError, ConnectionResetError):
+        except (asyncio.CancelledError, ConnectionResetError, BrokenPipeError):
             pass
         except:
             print("TX TASK EXCEPTION ON", self, file=sys.stderr)
@@ -156,7 +156,7 @@ class BusConnector:
 
         try:
             await self._rx_task
-        except (asyncio.CancelledError, ConnectionResetError,
+        except (asyncio.CancelledError, ConnectionResetError, BrokenPipeError,
                 asyncio.IncompleteReadError):
             pass
         except:
