@@ -8,6 +8,71 @@ import pymavlink.dialects.v20.ardupilotmega as mavlink
 from caeser_salad.mbus import client as mclient
 from caeser_salad.mavstuff import mbus_component
 
+# handle keeping and monitoring params
+class ParamKeeper:
+    def __init__(self, param_names):
+        params = set(param_names)
+
+        # latest value of each param
+        self._values = {}
+
+        # events that get set when a parameter changes
+        self._events = {}
+
+        # initialize the above
+        for param in params:
+            self._values[param] = None
+            self._events[param] = asyncio.Event()
+
+    def __getattr__(self, name):
+        # when obj.x happens, we get asked for "x"
+        # the only attributes we support are those in our params
+        try:
+            return self._values[name]
+        except KeyError:
+            raise AttributeError("no param {}".format(name)) from None
+
+    def __setattr__(self, name, value):
+        if name[0] == "_":
+            return super().__setattr__(name, value)
+
+        # when obj.x = y, we get "x" and y
+        if name not in self._values:
+            raise AttributeError("no param {}".format(name))
+
+        # update the new value of the attribute
+        self._values[name] = value
+
+        # wake up everyone that was waiting on it changing
+        e = self._events[name]
+        e.set()
+        # and clear it so any new waiters have to wait for the next change
+        e.clear()
+
+    async def wait_for(self, param):
+        # wait for the param to be updated and return its new value
+        await self._events[param].wait()
+        return self._values[param]
+
+    async def wait_until(self, param, cond):
+        # wait for new values of param until cond is True
+        # returns immediately if it is already true
+        # cond is a function that is called with param as its only argument
+        val = self._values[param]
+        while not cond(val):
+            val = await self.wait_for(param)
+        return val
+
+# update the param keeper with the new message parameters
+async def update_params(msg_filter, pk):
+    while True:
+        msg = await msg_filter.next_message()
+        msg, src, dest = msg.msg, msg.src, msg.dest
+
+        if isinstance(msg, mavlink.MAVLink_vfr_hud_message):
+            pk.airspeed = msg.airspeed
+            pk.heading = msg.heading
+
 async def main():
     # system boot time
     bt = time.monotonic()
@@ -41,11 +106,18 @@ async def main():
         1 # start sending it
     ))
 
-    # for now, just print them out to make sure it's working
+    # create a param keeper so that we can easily act on the message values
+    pk = ParamKeeper((
+        # from VFR_HUD
+        "airspeed",
+        "heading"
+    ))
+
+    # start a task to keep it running
+    pk_task = asyncio.create_task(update_params(msg_filter, pk))
+
     while True:
-        msg = await msg_filter.next_message()
-        msg, src, dest = msg.msg, msg.src, msg.dest
-        print(msg, src)
+        print(await pk.wait_for("airspeed"), pk.heading)
 
 if __name__ == "__main__":
     asyncio.run(main())
