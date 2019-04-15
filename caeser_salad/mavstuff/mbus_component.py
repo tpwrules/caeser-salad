@@ -118,11 +118,15 @@ class MBusComponent:
 
     async def _send_heartbeat(self):
         # automatically send the heartbeat message every second
-        # to do: send current state
+        
+        # what should be sent here is unclear. the docs suggest this might
+        # should mirror the autopilot's state, but it doesn't seem like that
+        # is done in practice or that anybody cares
+        # so just claim we're whatever and let our component ID do the talking
         while True:
             hb = mavlink.MAVLink_heartbeat_message(
-                mavlink.MAV_TYPE_CAMERA, 0, 0, 0, 
-                mavlink.MAV_STATE_ACTIVE, 3)
+                mavlink.MAV_TYPE_GENERIC, mavlink.MAV_AUTOPILOT_GENERIC,
+                0, 0, 0, 3)
             self.send_msg(hb)
 
             await asyncio.sleep(1)
