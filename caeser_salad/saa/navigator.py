@@ -111,8 +111,41 @@ async def avoid(msg_filter, pk, component):
         await pk.wait_until("airspeed", lambda a: a < 0.1)
         print("phew, stopped")
 
-        print("waiting for obstacle to move...")
-        await pk.wait_until("collision", lambda c: c == "none")
+        print("navigating around obstacle")
+        component.send_msg(mavlink.MAVLink_set_mode_message(
+            1, # drone system
+            mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+            mavlink.COPTER_MODE_GUIDED, # copter's mode
+        ))
+
+        angle_step = -15 if where == "right" else 15
+
+        total_step = 0
+
+        heading = pk.heading
+
+        print("looking for opening")
+        while await pk.wait_for("collision") != "none":
+            heading = (heading + angle_step) % 360
+            total_step += abs(angle_step)
+            if total_step >= 360:
+                print("uhm. can't see a way around it. giving up")
+                return
+            component.send_msg(mavlink.MAVLink_command_long_message(
+                1, # drone system
+                1, # autopilot component,
+                mavlink.MAV_CMD_CONDITION_YAW, # change heading
+                0,
+                heading, # new yaw in degrees,
+                0, # degrees per second,
+                1, # clockwise
+                0, # absolute angle
+                0, 0, 0 # unused
+            ))
+            await pk.wait_until("heading", lambda h: ang_dist(h, heading) < 2)
+
+        print("i see one!!")
+
         print("resuming mission")
         component.send_msg(mavlink.MAVLink_set_mode_message(
             1, # drone system
