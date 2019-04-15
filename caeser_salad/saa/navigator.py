@@ -8,6 +8,12 @@ import pymavlink.dialects.v20.ardupilotmega as mavlink
 from caeser_salad.mbus import client as mclient
 from caeser_salad.mavstuff import mbus_component
 
+def ang_dist(a, b):
+    # https://stackoverflow.com/questions/7570808/
+    # how-do-i-calculate-the-difference-of-two-angle-measures/30887154
+    x = abs(b-a)%360
+    return 360-x if x > 180 else x
+
 # handle keeping and monitoring params
 class ParamKeeper:
     def __init__(self, param_names):
@@ -86,11 +92,34 @@ async def listen_for_hits(mbus, pk):
         pk.collision = msg
 
 # do the sense and avoid task
-async def avoid(msg_filter, pk):
+async def avoid(msg_filter, pk, component):
     print("sensing")
 
     while True:
-        print(await pk.wait_for("collision"))
+        # wait for a collision to be imminent
+        where = await pk.wait_until("collision", lambda c: c != "none")
+        # stop the drone!!!!
+        component.send_msg(mavlink.MAVLink_set_mode_message(
+            1, # drone system
+            mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+            mavlink.COPTER_MODE_BRAKE, # copter's mode
+        ))
+        print("stopping!!!!")
+        await pk.wait_until("airspeed", lambda a: a < 0.1)
+        # it overcorrects a little
+        await asyncio.sleep(2)
+        await pk.wait_until("airspeed", lambda a: a < 0.1)
+        print("phew, stopped")
+
+        print("waiting for obstacle to move...")
+        await pk.wait_until("collision", lambda c: c == "none")
+        print("resuming mission")
+        component.send_msg(mavlink.MAVLink_set_mode_message(
+            1, # drone system
+            mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+            mavlink.COPTER_MODE_AUTO, # copter's mode
+        ))
+
 
 async def main():
     # system boot time
@@ -149,7 +178,7 @@ async def main():
             await pk.wait_until("mode", lambda m: m == "auto")
 
         # start a task to do the avoidance
-        av_task = asyncio.create_task(avoid(msg_filter, pk))
+        av_task = asyncio.create_task(avoid(msg_filter, pk, component))
 
         while not av_task.done():
             curr_mode = await pk.wait_for("mode")
