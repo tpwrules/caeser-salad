@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+import math
 
 import pymavlink.dialects.v20.ardupilotmega as mavlink
 
@@ -83,6 +84,12 @@ async def update_params(msg_filter, pk):
             name = mavlink.enums["COPTER_MODE"][msg.custom_mode].name
             pk.mode = name.replace("COPTER_MODE_", "").lower()
             pk.armed = True if msg.base_mode & 128 else False
+        elif isinstance(msg, mavlink.MAVLink_attitude_message):
+            pk.yaw = msg.yaw
+        elif isinstance(msg, mavlink.MAVLink_local_position_ned_message):
+            pk.l_north = msg.x
+            pk.l_east = msg.y
+            pk.l_down = msg.z
 
 async def listen_for_hits(mbus, pk):
     mf = mclient.MessageBusFilter(mbus, filters={"saa_collision": (str,)})
@@ -143,8 +150,40 @@ async def avoid(msg_filter, pk, component):
                 0, 0, 0 # unused
             ))
             await pk.wait_until("heading", lambda h: ang_dist(h, heading) < 2)
+            # wait now to avoid any rotation blurring problems
+            await pk.wait_for("collision")
+            # next message will have started when the drone was stationary
 
         print("i see one!!")
+        await asyncio.sleep(2)
+
+        # calculate ten meters away at the current heading
+        forward = 10
+        right = 0
+        down = 0
+        yaw = await pk.wait_for("yaw")
+        print(yaw)
+        pos = pk.l_north, pk.l_east, pk.l_down
+        new_pos = (forward*math.cos(yaw)-right*math.sin(yaw),
+            forward*math.sin(yaw)+right*math.cos(yaw),
+            down)
+        print(pos, new_pos)
+
+        # and tell the drone to go there
+        print("going for it...")
+        component.send_msg(
+            mavlink.MAVLink_set_position_target_local_ned_message(
+                0, # time boot ms
+                1, 1, # target drone autopilot,
+                mavlink.MAV_FRAME_LOCAL_OFFSET_NED,
+                0b0000111111111000, # type_mask (only positions enabled)
+                *new_pos,
+                0, 0, 0, #xyz velocity, not used,
+                0, 0, 0, #xyz acceleration, not used,
+                0, 0 # yaw and rate, not used
+            ))
+
+        await asyncio.sleep(10)
 
         print("resuming mission")
         component.send_msg(mavlink.MAVLink_set_mode_message(
@@ -174,11 +213,29 @@ async def main():
     msg_filter = component.create_message_filter((
         # drone speed and heading information
         mavlink.MAVLink_vfr_hud_message,
+        # attitude message for local flight
+        mavlink.MAVLink_attitude_message,
+        # position of drone in its local frame
+        mavlink.MAVLink_local_position_ned_message,
         # current flight mode
         mavlink.MAVLink_heartbeat_message
     ))
 
     # ask the drone to send us the data streams with those messages
+    component.send_msg(mavlink.MAVLink_request_data_stream_message(
+        1, # drone system
+        1, # autopilot component,
+        mavlink.MAV_DATA_STREAM_POSITION,
+        5, # 5Hz transmission frequency
+        1 # start sending it
+    ))
+    component.send_msg(mavlink.MAVLink_request_data_stream_message(
+        1, # drone system
+        1, # autopilot component,
+        mavlink.MAV_DATA_STREAM_EXTRA1,
+        5, # 5Hz transmission frequency
+        1 # start sending it
+    ))
     component.send_msg(mavlink.MAVLink_request_data_stream_message(
         1, # drone system
         1, # autopilot component,
@@ -195,6 +252,12 @@ async def main():
         # from HEARTBEAT
         "mode",
         "armed",
+        # from ATTITUDE,
+        "yaw",
+        # from LOCAL_POSITION_NED,
+        "l_north",
+        "l_east",
+        "l_down",
         # from the sense engine
         "collision"
     ))
