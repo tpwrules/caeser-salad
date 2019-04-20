@@ -37,7 +37,7 @@ class ComponentCommandHandler:
         if self._last_cmd is None:
             raise RuntimeError("last command was already responded to")
         self._component.send_msg(mavlink.MAVLink_command_ack_message(
-            self._last_cmd.msg.command, result, 0, 0, *self._last_cmd.src))
+            self._last_cmd.msg.command, result))
         self._last_cmd = None
 
 
