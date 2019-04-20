@@ -33,7 +33,7 @@ async def main(args):
     if args.host is not None: # TCP connection
         reader, writer = await asyncio.open_connection(args.host, args.port)
     else: # can only be a serial connection
-        reader, writer = await asyncio.open_serial_connection(
+        reader, writer = await serial_asyncio.open_serial_connection(
             url=args.serial, baudrate=args.baud)
 
     try:
