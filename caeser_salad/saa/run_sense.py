@@ -1,5 +1,9 @@
 # wrap josh's code to send collision messages on the bus
 
+# make sure we can find the realsense libraries
+import sys
+sys.path.append("/usr/local/lib")
+
 import asyncio
 
 from caeser_salad.mbus import client as mclient
@@ -20,3 +24,4 @@ async def main():
     # contrary to its name, calling this function starts off everything
     await cp.init_Camera(status)
 
+asyncio.run(main())
