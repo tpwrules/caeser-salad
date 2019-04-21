@@ -323,15 +323,29 @@ class Handler:
         out_dir = data_base_dir/session_name
         out_dir.mkdir(exist_ok=True)
 
-        def save_capture(itime, idata):
+        def save_capture(itime, idata, pos):
             nonlocal image_count
             print("CAPTURING IMAGE!!!!!", image_count)
-            f = open(out_dir/("image_{:03d}_{}ms.jpg".format(
-                    image_count, int(itime*1000))),
-                "wb")
+            fname = out_dir/("image_{:03d}_{}ms.jpg".format(
+                    image_count, int(itime*1000)))
+            f = open(fname, "wb")
             f.write(idata)
             f.close()
             print("save done!")
+            # now we have to tell the GCS about it
+            self.comp.send_msg(mavlink.MAVLink_camera_image_captured_message(
+                time_boot_ms=int((time.monotonic()-self.cam_bt)*1000),
+                time_utc=int(time.time()*1e6),
+                camera_id=1,
+                lat=pos.lat,
+                lon=pos.lon,
+                alt=pos.alt,
+                relative_alt=pos.relative_alt,
+                q=[0, 0, 0, 0],
+                image_index=image_count,
+                capture_result=1,
+                file_url=str(fname).encode("ascii")
+            ))
             image_count += 1
 
         while True:
@@ -342,13 +356,16 @@ class Handler:
             itime, idata = img
             itime -= self.cam_bt
 
+            async with self.latest_pos_lock:
+                pos = self.latest_pos
+
             # if capturing got set to True, it was the drone asking us
             # to start capturing
             if self.capturing:
                 # if cap_interval is None, this is a single image
                 if self.cap_interval is None:
                     # so just capture it now
-                    save_capture(itime, idata)
+                    save_capture(itime, idata, pos)
                 else:
                     # we are starting a capture interval
                     next_image_time = itime
@@ -359,7 +376,7 @@ class Handler:
                 if next_image_time <= itime:
                     # we could set capturing to true and false
                     # but nobody will notice since there is no await
-                    save_capture(itime, idata)
+                    save_capture(itime, idata, pos)
                     next_image_time += self.cap_interval
                     # if caps_remaining was negative, this will
                     # go forever, which is precisely what we want
