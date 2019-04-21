@@ -1,8 +1,10 @@
 # manage the visual camera
 
 import asyncio
+import datetime
 import time
 import traceback
+import pathlib
 
 import threading
 import queue
@@ -311,11 +313,21 @@ class Handler:
 
     async def handle_capture(self):
         image_count = 0
+        data_base_dir = pathlib.Path("/home/pilot/data_drive")
+        if not (data_base_dir/".is_mounted").exists():
+            raise Exception("data drive not mounted?")
+
+        # create a folder for this session
+        start_time = datetime.datetime.now()
+        session_name = start_time.strftime("VISUAL_%Y%m%d_%H%M%S")
+        out_dir = data_base_dir/session_name
+        out_dir.mkdir(exist_ok=True)
+
         def save_capture(itime, idata):
             nonlocal image_count
             print("CAPTURING IMAGE!!!!!", image_count)
-            f = open("/home/pilot/data_drive/test/"
-                "image_{:03d}_{}ms.jpg".format(image_count, int(itime*1000)),
+            f = open(out_dir/("image_{:03d}_{}ms.jpg".format(
+                    image_count, int(itime*1000))),
                 "wb")
             f.write(idata)
             f.close()
