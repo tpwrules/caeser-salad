@@ -4,6 +4,10 @@ import asyncio
 import time
 import traceback
 
+import threading
+import queue
+import subprocess
+
 import pymavlink.dialects.v20.ardupilotmega as mavlink
 
 from caeser_salad.mbus import client as mclient
@@ -14,6 +18,76 @@ def pad(m, n):
         return m[:n]
     else:
         return m + b"\0"*(n-len(m))
+
+def capture_thread_func(loop, new_frame_queue, please_exit_event):
+    # make ffmpeg do the hard work
+    ffmpeg = subprocess.Popen(args=(
+        "ffmpeg",
+        "-hide_banner", "-loglevel", "error", # nothing on stderr, please
+        "-f", "v4l2", # capture from camera with video4linux2
+        "-input_format", "mjpeg", # let the camera encode JPEGs
+        "-framerate", "20", # minimum framerate
+        "-video_size", "4208x3120", # maximum image size
+        "-i", "/dev/video0", # the visual camera. is this always video0?
+        "-f", "image2pipe", # dump frames to output
+        "-vcodec", "copy", # don't reencode them (they come out as JPEGs)
+        "-"), # output file is stdout
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE, # capture the stdout from python
+        bufsize=0) # don't buffer it so we get frames as they are captured
+
+    databuf = bytearray()
+
+    try:
+        while not please_exit_event.is_set():
+            # search for start of image marker (\xFF\xD8)
+            try:
+                soi = databuf.index(b'\xFF\xD8')
+            except ValueError:
+                # maybe we split the marker, so don't throw away the first byte
+                if len(databuf) > 0 and databuf[-1] == 0xFF:
+                    # is it more efficient to create a new bytearray?
+                    databuf = databuf[-1:]
+                else:
+                    databuf = bytearray()
+                rb = ffmpeg.stdout.read(2*1024*1024)
+                if len(rb) == 0:
+                    raise Exception("ffmpeg died")
+                databuf.extend(rb)
+                continue
+
+            # declare that the image was captured when we find its SOI
+            imagetime = time.monotonic()
+
+            # search only the new part of the buffer for the EOI
+            lastsize = soi+2
+
+            # search for end of image marker (\xFF\xD9)
+            while True:
+                try:
+                    eoi = databuf.index(b'\xFF\xD9', lastsize)
+                    break
+                except ValueError:
+                    lastsize = len(databuf)
+                    rb = ffmpeg.stdout.read(2*1024*1024)
+                    if len(rb) == 0:
+                        raise Exception("ffmpeg died")
+                    databuf.extend(rb)
+
+            imagedata, databuf = databuf[soi:eoi+2], databuf[eoi+2:]
+            try:
+                loop.call_soon_threadsafe(
+                    new_frame_queue.put_nowait, (imagetime, imagedata))
+            except RuntimeError: # event loop is closed
+                return
+    finally:
+        try:
+            loop.call_soon_threadsafe(new_frame_queue.put_nowait, None)
+        except RuntimeError:
+            pass
+        ffmpeg.kill()
+        ffmpeg.communicate()
+
 
 class Handler:
     def __init__(self):
@@ -31,6 +105,8 @@ class Handler:
         self.capture_task = None
 
         self._shutdown_task = None
+        self.please_exit_event = None
+        self.capture_thread = None
 
     async def start(self):
         # we start here
@@ -106,17 +182,13 @@ class Handler:
         self.cmd_task = asyncio.create_task(
             c(self.handle_cmds(cam_cmd_handler)))
 
-        self.latest_image = None
-        self.latest_image_time = None
-        self.new_image_event = asyncio.Event()
+        self.new_image_queue = asyncio.Queue()
+        self.start_capture_thread()
 
-        # start the task to handle the mav capture engine
-        self.cap_state_task = asyncio.create_task(
-            c(self.handle_cap_state()))
-
-        # and finally, the task to receive new images from the camera
-        self.capture_task = asyncio.create_task(c(self.do_capture()))
-
+        # start the task to receive new images from the capturer
+        # and handle the capture state machine
+        self.capture_task = asyncio.create_task(
+            c(self.handle_capture()))
 
     async def handle_cmds(self, handler):
         bt = self.cam_bt
@@ -237,16 +309,26 @@ class Handler:
                 self.latest_pos_time = pos.time_boot_ms+self.drone2cam_time
 
 
-    async def handle_cap_state(self):
+    async def handle_capture(self):
         image_count = 0
-        def save_capture():
+        def save_capture(itime, idata):
+            nonlocal image_count
             print("CAPTURING IMAGE!!!!!", image_count)
+            f = open("/home/pilot/data_drive/test/"
+                "image_{:03d}_{}ms.jpg".format(image_count, int(itime*1000)),
+                "wb")
+            f.write(idata)
+            f.close()
             print("save done!")
             image_count += 1
 
         while True:
             # wait until there is a new image
-            await self.new_image_event.wait()
+            img = await self.new_image_queue.get()
+            if img is None: # the capture thread deid
+                break
+            itime, idata = img
+            itime -= self.cam_bt
 
             # if capturing got set to True, it was the drone asking us
             # to start capturing
@@ -254,18 +336,18 @@ class Handler:
                 # if cap_interval is None, this is a single image
                 if self.cap_interval is None:
                     # so just capture it now
-                    save_capture()
+                    save_capture(itime, idata)
                 else:
                     # we are starting a capture interval
-                    next_image_time = self.latest_image_time
+                    next_image_time = itime
                 # since we saved the capture, we are now idle
                 self.capturing = False
             if self.cap_interval is not None:
                 # we are capturing an image sequence
-                if next_image_time <= self.latest_image_time:
+                if next_image_time <= itime:
                     # we could set capturing to true and false
                     # but nobody will notice since there is no await
-                    save_capture()
+                    save_capture(itime, idata)
                     next_image_time += self.cap_interval
                     # if caps_remaining was negative, this will
                     # go forever, which is precisely what we want
@@ -274,17 +356,17 @@ class Handler:
                         self.cap_interval = None
 
 
-    async def do_capture(self):
-        # for now just put out frames at kind of a random rate
-        import random
-        while True:
-            await asyncio.sleep(random.random()*0.1+0.2)
-            # wake everybody waiting up, but make anybody who wasn't waiting
-            # wait again
-            self.new_image_event.set()
-            self.new_image_event.clear()
-            self.latest_image = 3
-            self.latest_image_time = time.monotonic()
+    def start_capture_thread(self):
+        # create a thread to suck data in from ffmpeg and enqueue it
+        self.new_image_queue = asyncio.Queue()
+        self.please_exit_event = threading.Event()
+
+        self.capture_thread = threading.Thread(
+            target=capture_thread_func,
+            args=(asyncio.get_event_loop(), self.new_image_queue,
+                self.please_exit_event))
+
+        self.capture_thread.start()
 
 
     async def shutdown(self):
@@ -317,8 +399,9 @@ class Handler:
 
         await end_task(self.pos_rx_task)
         await end_task(self.cmd_task)
-        await end_task(self.cap_state_task)
         await end_task(self.capture_task)
+
+        self.please_exit_event.set()
 
 
 async def main():
