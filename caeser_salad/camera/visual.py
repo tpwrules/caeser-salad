@@ -30,6 +30,8 @@ class Handler:
         self.cap_state_task = None
         self.capture_task = None
 
+        self._shutdown_task = None
+
     async def start(self):
         # we start here
         # nothing to be done in init cause it can't be async
@@ -80,7 +82,7 @@ class Handler:
             try:
                 return await t
             finally:
-                self.shutdown()
+                self._start_shutdown()
 
 
         # start the task to receive the latest position from the drone
@@ -236,9 +238,11 @@ class Handler:
 
 
     async def handle_cap_state(self):
+        image_count = 0
         def save_capture():
-            print("CAPTURING IMAGE!!!!!")
+            print("CAPTURING IMAGE!!!!!", image_count)
             print("save done!")
+            image_count += 1
 
         while True:
             # wait until there is a new image
@@ -284,6 +288,14 @@ class Handler:
 
 
     async def shutdown(self):
+        self._start_shutdown()
+        await self._shutdown_task
+
+    def _start_shutdown(self):
+        if self._shutdown_task is None:
+            self._shutdown_task = asyncio.create_task(self._do_shutdown())
+
+    async def _do_shutdown(self):
         if self.mbus is not None:
             try:
                 await self.mbus.close()
