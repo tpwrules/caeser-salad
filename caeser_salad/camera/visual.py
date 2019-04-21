@@ -1,4 +1,4 @@
-# pretend to be a camera and fool QGC
+# manage the visual camera
 
 import asyncio
 import time
@@ -42,39 +42,48 @@ async def main():
         if cmd_num == mavlink.MAV_CMD_REQUEST_CAMERA_INFORMATION:
             # tell the GCS about this camera
             cmd_handler.respond(mavlink.MAV_RESULT_ACCEPTED)
-            if cmd_msg.param1 != 1: # don't do it
+            if cmd_msg.param1 != 1: # 1 means actually do it
                 continue
             msg = mavlink.MAVLink_camera_information_message(
                 time_boot_ms=int((time.monotonic()-bt)*1000),
                 vendor_name=pad(b"by Thomas Computer Industries", 32),
-                model_name=pad(b"Caeser Salad Visual Camera", 32),
+                model_name=pad(b"CAESER Salad Visual Camera", 32),
                 firmware_version=0,
+                # i don't actually know what these are but they don't
+                # seem to particularly matter
                 focal_length=100, # mm
                 sensor_size_h=10, # mm
                 sensor_size_v=10, # mm
-                resolution_h=1920,
-                resolution_v=1080,
+                # maximum from the camera. don't seem to matter either
+                resolution_h=4208,
+                resolution_v=3120,
                 lens_id=0,
+                # this camera is really boring and can only
+                # capture images
                 flags=(
-                    mavlink.CAMERA_CAP_FLAGS_CAPTURE_VIDEO |
                     mavlink.CAMERA_CAP_FLAGS_CAPTURE_IMAGE
                 ),
+                # no camera definition
                 cam_definition_version=0,
                 cam_definition_uri=b""
             )
             component.send_msg(msg)
         elif cmd_num == mavlink.MAV_CMD_REQUEST_CAMERA_SETTINGS:
             cmd_handler.respond(mavlink.MAV_RESULT_ACCEPTED)
-            if cmd_msg.param1 != 1: # don't do it
+            if cmd_msg.param1 != 1: # 1 means actually do it
                 continue
             msg = mavlink.MAVLink_camera_settings_message(
                 time_boot_ms=int((time.monotonic()-bt)*1000),
+                # we only have image mode
                 mode_id=mavlink.CAMERA_MODE_IMAGE,
+                # and we don't keep track of zoom or focus
+                zoomLevel=float("nan"),
+                focusLevel=float("nan")
             )
             component.send_msg(msg)
         elif cmd_num == mavlink.MAV_CMD_REQUEST_STORAGE_INFORMATION:
             cmd_handler.respond(mavlink.MAV_RESULT_ACCEPTED)
-            # todo: parse which from command
+            # just make stuff up, too lazy to deal this moment
             msg = mavlink.MAVLink_storage_information_message(
                 time_boot_ms=int((time.monotonic()-bt)*1000),
                 storage_id=1,
@@ -84,17 +93,18 @@ async def main():
                 total_capacity=65536,
                 used_capacity=0,
                 available_capacity=65536,
-                read_speed=30,
-                write_speed=30
+                read_speed=40,
+                write_speed=40
             )
             component.send_msg(msg)
         elif cmd_num == mavlink.MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS:
             cmd_handler.respond(mavlink.MAV_RESULT_ACCEPTED)
-            if cmd_msg.param1 != 1: # don't do it
+            if cmd_msg.param1 != 1: # 1 means actually do it
                 continue
             msg = mavlink.MAVLink_camera_capture_status_message(
                 time_boot_ms=int((time.monotonic()-bt)*1000),
                 image_status=0,
+                # we don't capture video, so always 0
                 video_status=0,
                 image_interval=1,
                 recording_time_ms=0,
