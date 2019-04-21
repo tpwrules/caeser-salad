@@ -15,6 +15,8 @@ import pymavlink.dialects.v20.ardupilotmega as mavlink
 from caeser_salad.mbus import client as mclient
 from caeser_salad.mavstuff import mbus_component
 
+import piexif
+
 def pad(m, n):
     if len(m) >= n:
         return m[:n]
@@ -323,14 +325,45 @@ class Handler:
         out_dir = data_base_dir/session_name
         out_dir.mkdir(exist_ok=True)
 
+        # first exif tag with basic metadata
+        zeroth_ifd = {
+            piexif.ImageIFD.Make: "Thomas Computer Industries",
+            piexif.ImageIFD.XResolution: (4208, 1),
+            piexif.ImageIFD.YResolution: (3120, 1),
+            piexif.ImageIFD.Software: "CAESER Salad"
+        }
+        # then the exif version and stuff
+        exif_ifd = {
+            piexif.ExifIFD.ExifVersion: b"\x02\x00\x00\x00"
+        }
+
         def save_capture(itime, idata, pos):
             nonlocal image_count
             print("CAPTURING IMAGE!!!!!", image_count)
+            # tag the image with gps exif data
+            gps_ifd = {
+                piexif.GPSIFD.GPSVersionID: (2, 2, 0, 0),
+                # altitude is above sea level
+                piexif.GPSIFD.GPSAltitudeRef: 0,
+                piexif.GPSIFD.GPSAltitude: (pos.alt, int(1e3)),
+
+                piexif.GPSIFD.GPSLatitude: 
+                    ((abs(pos.lat), int(1e7)), (0, 1), (0, 1)),
+                piexif.GPSIFD.GPSLatitudeRef: b'N' if pos.lat >= 0 else b'S',
+
+                piexif.GPSIFD.GPSLongitude:
+                    ((abs(pos.lon), int(1e7)), (0, 1), (0, 1)),
+                piexif.GPSIFD.GPSLongitudeRef: b'E' if pos.lat >= 0 else 'W',
+
+            }
+            exif_bytes = piexif.dump({
+                "0th": zeroth_ifd,
+                "Exif": exif_ifd,
+                "GPS": gps_ifd
+            })
             fname = out_dir/("image_{:03d}_{}ms.jpg".format(
                     image_count, int(itime*1000)))
-            f = open(fname, "wb")
-            f.write(idata)
-            f.close()
+            piexif.insert(exif_bytes, idata, fname)
             print("save done!")
             # now we have to tell the GCS about it
             self.comp.send_msg(mavlink.MAVLink_camera_image_captured_message(
