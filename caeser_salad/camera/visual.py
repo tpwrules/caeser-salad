@@ -49,6 +49,7 @@ class Handler:
             mavlink.MAV_CMD_REQUEST_STORAGE_INFORMATION,
             mavlink.MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS,
             mavlink.MAV_CMD_IMAGE_START_CAPTURE,
+            mavlink.MAV_CMD_IMAGE_STOP_CAPTURE
         ))
 
         # tell the autopilot to blast us with position information at 5hz
@@ -252,7 +253,7 @@ class Handler:
                     save_capture()
                 else:
                     # we are starting a capture interval
-                    next_image_time = 0
+                    next_image_time = self.latest_image_time
                 # since we saved the capture, we are now idle
                 self.capturing = False
             if self.cap_interval is not None:
