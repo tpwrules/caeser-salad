@@ -14,6 +14,7 @@ import caeser_salad.mbus.client as mclient
 mbus_tags = (
     "mav_test", # testing the mbus component
     "mav_navigator", # navigator, flies the drone during avoidance
+    "mav_visual_camera"
 )
 
 def parse_args():
