@@ -353,7 +353,7 @@ class Handler:
 
                 piexif.GPSIFD.GPSLongitude:
                     ((abs(pos.lon), int(1e7)), (0, 1), (0, 1)),
-                piexif.GPSIFD.GPSLongitudeRef: b'E' if pos.lat >= 0 else 'W',
+                piexif.GPSIFD.GPSLongitudeRef: b'E' if pos.lon >= 0 else 'W',
 
             }
             exif_bytes = piexif.dump({
