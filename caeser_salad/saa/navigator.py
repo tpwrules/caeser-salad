@@ -158,7 +158,7 @@ async def avoid(msg_filter, pk, component):
         await asyncio.sleep(2)
 
         # calculate ten meters away at the current heading
-        forward = 10
+        forward = 5
         right = 0
         down = 0
         yaw = await pk.wait_for("yaw")

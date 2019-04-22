@@ -25,9 +25,9 @@ async def readCamera(pipeline, status):
       leftCount=0 #ammount of critical points on left side
       rightCount=0 #ammount of critical points on right side
       bottomCutoff=0.15*1000 #critical distance range min to ignore erroneous measurements
-      topCutoff=1.3*1000 #critical distance range max
-      totalCutoffPercent=17.5 #percentage of total count to consider crashing
-      LRCutoffPercent=12.5 #percentage of left right count to consider crashing
+      topCutoff=2*1000 #critical distance range max
+      totalCutoffPercent=4 #percentage of total count to consider crashing
+      LRCutoffPercent=3  #percentage of left right count to consider crashing
       frames=pipeline.wait_for_frames()
       depth=frames.get_depth_frame()
       criticalArray=numpy.asanyarray(depth.get_data())
