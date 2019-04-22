@@ -361,7 +361,7 @@ class Handler:
                 "Exif": exif_ifd,
                 "GPS": gps_ifd
             })
-            fname = out_dir/("image_{:03d}_{}ms.jpg".format(
+            fname = out_dir/("image_{:05d}_{}ms.jpg".format(
                     image_count, int(itime*1000)))
             piexif.insert(exif_bytes, idata, fname)
             print("save done!")
